@@ -14,6 +14,21 @@ from fractions import Fraction
 
 # Helper function to get image metadata and optionally add a location to the GPS metadata
 def get_image_metadata(image_path, latitude: float=None, longitude: float=None):
+    """
+    Extracts and returns cleaned metadata from an image file, with optional embedding of GPS coordinates 
+    into the image's EXIF data if latitude and longitude are provided. Adjusts for GPS data, shutter speed, 
+    and original timestamp formatting if necessary.
+
+    Parameters:
+        image_path (str): Path to the image file.
+        latitude (float, optional): Latitude coordinate to embed in the GPS metadata. Defaults to None.
+        longitude (float, optional): Longitude coordinate to embed in the GPS metadata. Defaults to None.
+
+    Returns:
+        dict: A dictionary containing the cleaned and formatted image metadata, including 'GPSInfo' 
+        if GPS coordinates are provided. Fields include shutter speed, date and time adjustments based 
+        on timezone, and sanitized EXIF data.
+    """
     with Image.open(image_path) as img:
         # Get Image metadata and GPS metadata if available
         img_metadata = {ExifTags.TAGS[k]: v for k, v in img._getexif().items() if k in ExifTags.TAGS}
@@ -64,6 +79,18 @@ def get_image_metadata(image_path, latitude: float=None, longitude: float=None):
 
 # Helper function to convert decimal coordinates into degrees, minutes, seconds tuple format
 def to_dms(value, loc):
+    """
+    Converts a decimal coordinate value to a tuple in degrees, minutes, and seconds (DMS) format, 
+    suitable for EXIF GPS metadata.
+
+    Parameters:
+        value (float): The decimal coordinate to convert (e.g., latitude or longitude).
+        loc (str): A string indicating the type of coordinate ('lat' or 'lon').
+
+    Returns:
+        tuple: A tuple containing the DMS representation as a list of (value, scale) pairs for 
+               degrees, minutes, and seconds, and the location identifier (e.g., 'lat' or 'lon').
+    """
     degrees = int(value)
     minutes = int((value - degrees) * 60)
     seconds = round((value - degrees - minutes / 60) * 3600, 5)
@@ -71,6 +98,20 @@ def to_dms(value, loc):
 
 # Helper function to convert degree, minutes, seconds tuple into decimal format
 def dms_to_decimal(dms, ref):
+    """
+    Converts a degrees, minutes, and seconds (DMS) tuple into a decimal coordinate, 
+    taking into account the directional reference.
+
+    Parameters:
+        dms (list): A list of tuples representing degrees, minutes, and seconds, 
+                    where each tuple is (value, scale).
+        ref (str): A reference direction ('N', 'S', 'E', or 'W') to determine 
+                   the sign of the decimal coordinate.
+
+    Returns:
+        float: The decimal representation of the coordinate. Negative if the 
+               reference is 'S' or 'W'.
+    """
     degrees = dms[0][0] / dms[0][1]
     minutes = dms[1][0] / dms[1][1]
     seconds = dms[2][0] / dms[2][1]
@@ -83,6 +124,17 @@ def dms_to_decimal(dms, ref):
 
 # Helper function to format GPS metadata to a string
 def format_gps_decimal(metadata):
+    """
+    Formats GPS metadata into a human-readable string with latitude and longitude in decimal degrees.
+
+    Parameters:
+        metadata (dict): A dictionary containing GPS metadata, specifically 'GPSLatitude', 
+                         'GPSLatitudeRef', 'GPSLongitude', and 'GPSLongitudeRef'.
+
+    Returns:
+        str: A formatted string with latitude and longitude in decimal degrees (e.g., "37.7749° N, 122.4194° W"). 
+             Returns "Insufficient GPS metadata" if required metadata is missing.
+    """
     if metadata['GPSLatitude'] and metadata['GPSLatitudeRef'] and metadata['GPSLongitudeRef'] and metadata['GPSLongitude']:
         latitude_dms = metadata['GPSLatitude']
         latitude_ref = metadata['GPSLatitudeRef']
@@ -105,6 +157,16 @@ def calculate_font_size(image, scale_factor):
 
 # Helper function that will get the shutter speed in the correct format given the 'ShutterSpeedValue' from the metadata
 def format_shutter_speed(ExposureTime: float) -> str:
+    """
+    Formats the exposure time to the closest standard shutter speed value, returning it as a string.
+
+    Parameters:
+        ExposureTime (float): The exposure time from the metadata, in seconds.
+
+    Returns:
+        str: The formatted shutter speed as a string, either as a whole number for values above 1 
+             second or as a fraction (e.g., "1/60") for values below 1 second.
+    """
     # Prevent any devaition from standard shutter speed values
     standard_shutter_speeds = [
         1/8000, 1/6400, 1/5000, 1/4000, 1/3200, 1/2500, 1/2000, 1/1600,
@@ -125,18 +187,20 @@ def format_shutter_speed(ExposureTime: float) -> str:
     
     return rounded_speed
 
-    # fraction = Fraction(ExposureTime).limit_denominator(100000)
-
-    # # Handle the case where it doesn't result in a clean shutter speed value like 1/...
-    # if fraction.numerator % 10 != 1:
-    #     fraction = Fraction(fraction.numerator, fraction.denominator)
-
-    # result = f"{fraction.numerator}/{fraction.denominator}"
-    # print(result)
-    # return result
 
 # Helper function to update the DateTimeOriginal based on the coordinates of the picture
 def change_timezone(coordinates: tuple[float, float],  metadata: dict[str, Any]) -> str:
+    """
+    Adjusts the 'DateTimeOriginal' field in metadata based on the local timezone of the provided coordinates.
+
+    Parameters:
+        coordinates (tuple): A tuple of latitude and longitude (float) representing the picture's location.
+        metadata (dict): A dictionary of metadata that includes 'DateTimeOriginal', formatted as "%Y:%m:%d %H:%M:%S".
+
+    Returns:
+        str: The adjusted date and time as a string in the format "%m/%d/%Y %H:%M:%S" based on the local timezone.
+             If the timezone cannot be determined, returns the original 'DateTimeOriginal' value.
+    """
     # Get the DateTimeOriginal field from the metadata
     original_datetime = datetime.strptime(metadata['DateTimeOriginal'], "%Y:%m:%d %H:%M:%S")
 
@@ -161,6 +225,21 @@ def change_timezone(coordinates: tuple[float, float],  metadata: dict[str, Any])
 
 # Helper function to create an image with metadata details and dimensions of orginal image (Optional Image name too)
 def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height: int, img_name: str=None) -> Image:
+    """
+    Creates an image overlay with metadata details, formatted according to the dimensions of the 
+    original image. Optionally includes the image name and GPS metadata if provided.
+
+    Parameters:
+        metadata (dict): A dictionary of metadata values, including camera and lens details, 
+                         GPS coordinates, and settings like ISO, shutter speed, and f-number.
+        img_width (int): Width of the original image in pixels.
+        img_height (int): Height of the original image in pixels.
+        img_name (str, optional): Name of the image to display in the overlay, if provided.
+
+    Returns:
+        Image: A new PIL Image instance containing the metadata overlay, with text positioned 
+               and formatted based on image orientation and size.
+    """
     # Create a new blank image
     width, height = img_width, img_height
 
@@ -357,9 +436,9 @@ def save_image(image_to_save: Image, original_image_path: str, destination_folde
 
     # Check if the file exists already, if it does then we give the user the option to save it again
     if os.path.exists(new_path):
-        user_input = input(f"{new_file_name} already exists. Do you want to save a new version? (y/n): ").strip().lower()
+        user_input = input(f"{new_file_name} already exists. Chosose an option - Save a new version(y), Replace(r), Don't save(n): ").strip().lower()
 
-        # Action determined by user input
+        # Save a new version
         if user_input == "y":
             counter = 1
             while os.path.exists(new_path):
@@ -369,8 +448,95 @@ def save_image(image_to_save: Image, original_image_path: str, destination_folde
             # Save the image utilizing the counter
             print(f"Saving the image as {new_file_name}")
             image_to_save.save(new_path, quality=100, optimize=True, progressive=True)
+        # Replace the current version
+        elif user_input == "r":
+            print(f"Replacing the existing image at {new_file_name}")
+            image_to_save.save(new_path, quality=100, optimize=True, progressive=True)
+        # Don't save the file
         else:
             print("Not saving the image as it already exists")
     else:
         print("Saving the image since it doesn't exist")
         image_to_save.save(new_path, quality=100, optimize=True, progressive=True)
+
+
+# Helper function to determine which Aspect ratio is the best to use given an image (Used for prints)
+# We would later use this to determine how much of a border we should add
+def best_aspect_ratios_for_padding(image_width, image_height):
+    # Determine the orientation of the image
+    is_portrait = image_height > image_width
+    
+    # Set aspect ratios based on orientation
+    if is_portrait:
+        aspect_ratios = [(4, 5), (2, 3), (3, 4), (9, 16), (10, 8), (11, 14)]  # Portrait-friendly ratios
+    else:
+        aspect_ratios = [(5, 4), (3, 2), (4, 3), (16, 9), (8, 10), (14, 11)]  # Landscape-friendly ratios
+
+    padding_options = []
+    
+    # Iterate through each aspect ratio and calculate required padding
+    for (w_ratio, h_ratio) in aspect_ratios:
+        target_ratio = w_ratio / h_ratio
+        
+        # Calculate the target dimensions based on the current image's orientation
+        if image_width / image_height < target_ratio:
+            # Image is too tall; add padding to width
+            target_width = int(image_height * target_ratio)
+            width_padding = target_width - image_width
+            height_padding = 0
+        else:
+            # Image is too wide; add padding to height
+            target_height = int(image_width / target_ratio)
+            width_padding = 0
+            height_padding = target_height - image_height
+
+        # Total padding to achieve this aspect ratio
+        total_padding = width_padding + height_padding
+        padding_options.append({
+            'aspect_ratio': f"{w_ratio}:{h_ratio}",
+            'width_padding': width_padding,
+            'height_padding': height_padding,
+            'total_padding': total_padding
+        })
+    
+    # Sort by the least total padding required
+    padding_options.sort(key=lambda x: x['total_padding'])
+    
+    # Return the best options (with minimal padding) for resizing
+    return padding_options
+
+# Helper function that will be used to setup the padding for an image we want to create for a print
+def setup_print_padding(original_image: Image, stacked_image: Image, base_pad_value: int=400, desired_aspect_ratio: tuple[int, int]=None) -> tuple[int, int]:
+    # Get the value for the automatic vertical pad we will have in our new image
+    auto_vertical_pad = get_proportions(original_image.width, original_image.height, base_pad_value)
+    if original_image.width > original_image.height:
+        while (auto_vertical_pad * 2) + stacked_image.height > stacked_image.width:
+            base_pad_value -= 50
+            auto_vertical_pad = get_proportions(original_image.width, original_image.height, base_pad_value)
+    else:
+        while (auto_vertical_pad * 2) + stacked_image.height < stacked_image.width:
+            base_pad_value -= 50
+            auto_vertical_pad = get_proportions(original_image.width, original_image.height, base_pad_value)
+    print(f"auto_vertical_pad: {auto_vertical_pad}")
+
+    # Calculate the adjustments needed for all transformations to all common print aspect ratios
+    aspect_ratio_adjustment_list = best_aspect_ratios_for_padding(stacked_image.width, stacked_image.height + (2 * auto_vertical_pad))
+    print(aspect_ratio_adjustment_list)
+
+    # Format the target aspect ratio if present:
+    if desired_aspect_ratio is not None:
+        aspect_ratio_str = f"{desired_aspect_ratio[0]}:{desired_aspect_ratio[1]}"
+        aspect_ratio_adjustment_obj = next((option for option in aspect_ratio_adjustment_list if option['aspect_ratio'] == aspect_ratio_str), None)
+    else:
+        # Set a default processing if no desired aspect ratio (5:4 for Landscape and 2:3 for Portrait)
+        aspect_ratio = (5, 4) if original_image.width > original_image.height else (2, 3)
+        aspect_ratio_str = f"{aspect_ratio[0]}:{aspect_ratio[1]}"
+        aspect_ratio_adjustment_obj = next((option for option in aspect_ratio_adjustment_list if option['aspect_ratio'] == aspect_ratio_str), None)
+
+    # Set the padding values
+    horizontal_padding = aspect_ratio_adjustment_obj["width_padding"] // 2
+    vertical_padding = auto_vertical_pad
+
+    print(f"Horizontal padding: {horizontal_padding} and Vertical padding: {vertical_padding}")
+
+    return (horizontal_padding, vertical_padding)
