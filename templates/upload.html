@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Upload</title>
+    <!-- Add Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .container {
+            max-width: 700px;
+            margin: 50px auto;
+        }
+        #container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px; /* Add some spacing above the button */
+        } 
+        .dropzone {
+            border: 2px dashed #6c757d;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 18px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            position: relative; /* Needed for alignment */
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Centers the content horizontally */
+            justify-content: center; /* Centers the content vertically */
+        }
+        .dropzone:hover {
+            background-color: #f8f9fa;
+        }
+        #dropzoneText {
+            font-size: 1rem;
+            color: #555;
+            margin-top: 10px;
+            display: block;
+            text-align: center;
+        }
+
+        #previewImage {
+            max-width: 100%;
+            height: auto;
+            margin-top: 10px;
+            display: block;
+        }
+        .form-control {
+            margin-bottom: 15px;
+        }
+        .btn-primary {
+            margin-top: 20px;
+        }
+        #resetButton {
+            margin-top: 15px;
+            padding: 8px 16px;
+            background-color: #ff4d4d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+
+            /* Align the button to the center */
+            position: relative;
+            align-self: center; /* Centers within the dropzone */
+        }
+
+        #resetButton:hover {
+            background-color: #ff3333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Image Transformer</h1>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div id="container">
+                <!-- Drag and Drop Section -->
+                <div class="dropzone" id="dropzone">
+                    <p id="dropzoneText">Drag and drop an image here or click to upload</p>
+                    <input type="file" id="imageInput" name="image" class="form-control d-none" accept="image/*">
+                    <img id="previewImage" class="d-none" alt="Preview" style="max-width: 100%; margin-top: 20px;">
+                </div>
+
+                <!-- Adding the reset button -->
+                <button id="resetButton" style="display: none;">Reset</button>
+            </div>
+            
+            <!-- Latitude Input -->
+            <label for="latitude" class="form-label">Latitude</label>
+            <input type="text" id="latitude" name="latitude" class="form-control" placeholder="Enter latitude (e.g., 46.4975)">
+
+            <!-- Longitude Input -->
+            <label for="longitude" class="form-label">Longitude</label>
+            <input type="text" id="longitude" name="longitude" class="form-control" placeholder="Enter longitude (e.g., 7.7149)">
+
+            <!-- Photo Name Input -->
+            <label for="photoName" class="form-label">Photo Name</label>
+            <input type="text" id="photoName" name="photoName" class="form-control" placeholder="Enter photo name (e.g., Lake Oeschinensee)">
+
+            <!-- Aspect Ratio Dropdown -->
+            <label for="aspectRatio" class="form-label">Aspect Ratio</label>
+            <select id="aspectRatio" name="aspectRatio" class="form-select">
+                <option value="4:5">4:5</option>
+                <option value="3:2">3:2</option>
+                <option value="16:9">16:9</option>
+                <option value="1:1">1:1</option>
+                <option value="Custom">Custom</option>
+            </select>
+
+            <!-- Submit Button -->
+            <button type="submit" class="btn btn-primary w-100">Submit</button>
+        </form>
+    </div>
+
+    <!-- Add Bootstrap JS (Optional) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- JavaScript for Dropzone Interaction -->
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const dropzoneText = document.getElementById('dropzoneText');
+        const imageInput = document.getElementById('imageInput');
+        const previewImage = document.getElementById('previewImage');
+        const resetButton = document.getElementById("resetButton");
+    
+        // Drag-and-drop behavior
+        dropzone.addEventListener('click', () => {
+            console.log('Dropzone clicked. Opening file picker.');
+            imageInput.click();
+        });
+    
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            console.log('Drag over detected.');
+            dropzone.style.backgroundColor = '#e9ecef';
+        });
+    
+        dropzone.addEventListener('dragleave', () => {
+            console.log('Drag leave detected.');
+            dropzone.style.backgroundColor = '';
+        });
+    
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            console.log('File dropped.');
+            dropzone.style.backgroundColor = '';
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                console.log(`File dropped: ${files[0].name}`);
+                displayImagePreview(files[0]);
+            }
+        });
+    
+        imageInput.addEventListener('change', () => {
+            console.log('File selected.');
+            if (imageInput.files.length > 0) {
+                console.log(`File selected: ${imageInput.files[0].name}`);
+                displayImagePreview(imageInput.files[0]);
+            }
+        });
+
+        resetButton.addEventListener("click", () => {
+            resetDropzone();
+        });
+
+    
+        function displayImagePreview(file) {
+            console.log(`Attempting to preview file: ${file.name}`);
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                console.log('FileReader loaded file successfully.');
+                previewImage.src = e.target.result;
+                previewImage.classList.remove('d-none');
+                dropzoneText.textContent = file.name;
+                console.log("Successfully uploaded the file")
+
+                // Show the reset button
+                resetButton.style.display = "block";
+            };
+            reader.onerror = (e) => {
+                console.error('Error reading file:', e);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function resetDropzone() {
+            // Reset the text, image preview, and hide the reset button
+            dropzoneText.textContent = "Drag and drop an image here or click to upload";
+            previewImage.style.display = "none";
+            previewImage.src = "";
+            resetButton.style.display = "none";
+
+            // Clear the file input value
+            fileInput.value = "";
+        }
+    </script>
+    
+    
+</body>
+</html>

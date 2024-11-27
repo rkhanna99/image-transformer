@@ -311,6 +311,15 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
 
 # Helper method to get the aspect ratio of an image
 def get_aspect_ratio(img: Image) -> tuple[int, int]:
+    """
+    Calculates and returns the simplified aspect ratio of an image.
+
+    Parameters:
+        img (Image): A PIL Image instance.
+
+    Returns:
+        tuple[int, int]: The aspect ratio as a simplified fraction (width, height).
+    """
     width, height = img.size
 
     # Calculate the GCD to simplify the ratio
@@ -324,6 +333,18 @@ def get_aspect_ratio(img: Image) -> tuple[int, int]:
 
 # Helper method to calculate the padding(border), assume that the target padding is for the longer side
 def calculate_padding_for_aspect_ratio(img: Image, aspect_ratio: tuple[int, int], target_padding: int):
+    """
+    Calculates the horizontal and vertical padding needed to achieve the target padding 
+    on the longer side while maintaining the specified aspect ratio.
+
+    Parameters:
+        img (Image): A PIL Image instance.
+        aspect_ratio (tuple[int, int]): The desired aspect ratio as a simplified fraction (width, height).
+        target_padding (int): The desired padding size for the longer side of the image.
+
+    Returns:
+        tuple[int, int]: The calculated horizontal and vertical padding values.
+    """
     img_width, img_height = img.size
     img_ratio = img_width / img_height
 
@@ -347,6 +368,18 @@ def calculate_padding_for_aspect_ratio(img: Image, aspect_ratio: tuple[int, int]
 
 # Helper function to dynamically get the border size, whitespace between image and palette, and other proportions (40 MP image with a 3:2 aspect ratio should have border of 750)
 def get_proportions(image_width: int, image_height: int, reference_value: int) -> int:
+    """
+    Dynamically calculates a proportional value (e.g., border size or spacing) 
+    based on the dimensions of an image relative to a reference image.
+
+    Parameters:
+        image_width (int): The width of the image in pixels.
+        image_height (int): The height of the image in pixels.
+        reference_value (int): A reference value (e.g., border size) for a predefined image size.
+
+    Returns:
+        int: The calculated proportional value for the given image dimensions.
+    """
     # Set our values for a reference border size
     reference_width = 7728
     reference_height = 5152
@@ -365,6 +398,13 @@ def get_proportions(image_width: int, image_height: int, reference_value: int) -
 
 # Helper function to determine if we need to save the color palatte
 def save_palette() -> bool:
+    """
+    Determines whether to save the color palette image based on the existence of a file.
+
+    Returns:
+        bool: `True` if the color palette file does not exist and should be saved; 
+              `False` if the file already exists.
+    """
     if os.path.isfile("./color_palette.jpg"):
         print("The file exists don't need to save")
         return False
@@ -374,24 +414,37 @@ def save_palette() -> bool:
     
 # Helper function get image dimensions
 def get_dimensions(img):
+    """
+    Retrieves the dimensions of an image.
+
+    Parameters:
+        img: A PIL Image instance.
+
+    Returns:
+        dict: A dictionary containing the image's width (`img_width`) and height (`img_height`) in pixels.
+    """
     return {"img_width": img.width, "img_height": img.height}
 
 # Helper function to define dimensions for our palette from our base image
 def get_palette_dimensions(img, num_colors):
+    """
+    Calculates the dimensions for a color palette based on the dimensions of the base image.
+
+    Parameters:
+        img: A PIL Image instance representing the base image.
+        num_colors (int): The number of colors to include in the palette.
+
+    Returns:
+        dict: A dictionary containing the calculated palette width (`palette_width`) and 
+              height (`palette_height`) in pixels.
+    """
     img_dimensions = get_dimensions(img)
     palette_width = img_dimensions["img_width"] / num_colors
     palette_height = (10 / 100) * img_dimensions["img_height"]
     return {"palette_width": palette_width, "palette_height": palette_height}
 
 # Helper function that will override the Pylette display function
-def local_display(
-    self,
-    w: float = 50.0,
-    h: float = 50.0,
-    save_to_file: bool = False,
-    filename: str = "color_palette",
-    extension: str = "jpg",
-) -> None:
+def local_display(self, w: float = 50.0, h: float = 50.0, save_to_file: bool = False, filename: str = "color_palette", extension: str = "jpg",) -> None:
     """
     Displays the color palette as an image, with an option for saving the image.
 
@@ -426,6 +479,20 @@ def local_display(
 
 # Helper function to save the new image in the highest quality possible
 def save_image(image_to_save: Image, original_image_path: str, destination_folder: str):
+    """
+    Saves an image in the highest quality possible with options for handling 
+    existing files in the destination folder.
+
+    Parameters:
+        image_to_save (Image): A PIL Image instance to be saved.
+        original_image_path (str): The file path of the original image.
+        destination_folder (str): The folder where the new image should be saved.
+
+    Behavior:
+        - If the file already exists, the user is prompted to choose one of three options:
+          save a new version, replace the existing file, or skip saving.
+        - Saves the image with quality 100, optimized and progressive settings.
+    """
     base_name = os.path.basename(original_image_path).split(".")[0] + "_IT"
     new_file_name = base_name + ".jpg"
     print(new_file_name)
@@ -463,6 +530,20 @@ def save_image(image_to_save: Image, original_image_path: str, destination_folde
 # Helper function to determine which Aspect ratio is the best to use given an image (Used for prints)
 # We would later use this to determine how much of a border we should add
 def best_aspect_ratios_for_padding(image_width, image_height):
+    """
+    Determines the best aspect ratios for padding an image to fit standard print dimensions.
+
+    Parameters:
+        image_width (int): The width of the image in pixels.
+        image_height (int): The height of the image in pixels.
+
+    Returns:
+        list[dict]: A list of dictionaries sorted by minimal total padding, where each dictionary includes:
+            - `aspect_ratio` (str): The target aspect ratio as a string (e.g., "4:5").
+            - `width_padding` (int): The additional width padding required in pixels.
+            - `height_padding` (int): The additional height padding required in pixels.
+            - `total_padding` (int): The total padding (width + height) required in pixels.
+    """
     # Determine the orientation of the image
     is_portrait = image_height > image_width
     
@@ -507,6 +588,29 @@ def best_aspect_ratios_for_padding(image_width, image_height):
 
 # Helper function that will be used to setup the padding for an image we want to create for a print
 def setup_print_padding(original_image: Image, stacked_image: Image, base_pad_value: int=400, desired_aspect_ratio: tuple[int, int]=None) -> tuple[int, int]:
+    """
+    Sets up the padding values for an image to match a desired aspect ratio 
+    for print purposes, considering automatic vertical padding and aspect ratio adjustments.
+
+    Parameters:
+        original_image (Image): The original PIL Image instance used as the base for calculations.
+        stacked_image (Image): The PIL Image instance representing the final stacked image.
+        base_pad_value (int, optional): The base padding value for calculating vertical padding. Default is 400.
+        desired_aspect_ratio (tuple[int, int], optional): The desired aspect ratio (width, height). 
+            If not provided, defaults to 5:4 for landscape or 2:3 for portrait images.
+
+    Returns:
+        tuple[int, int]: A tuple containing:
+            - `horizontal_padding` (int): Padding to be added horizontally to fit the aspect ratio.
+            - `vertical_padding` (int): Automatically calculated vertical padding.
+
+    Behavior:
+        - Adjusts vertical padding dynamically to ensure the stacked image's height and width align with the original image's proportions.
+        - If a `desired_aspect_ratio` is provided, it finds the best matching adjustment from the calculated aspect ratios.
+        - Defaults to common aspect ratios (5:4 for landscape, 2:3 for portrait) if no `desired_aspect_ratio` is given.
+        - Ensures all padding values are balanced and optimized for print.
+
+    """
     # Get the value for the automatic vertical pad we will have in our new image
     auto_vertical_pad = get_proportions(original_image.width, original_image.height, base_pad_value)
     if original_image.width > original_image.height:
