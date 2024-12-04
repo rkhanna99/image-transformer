@@ -549,9 +549,9 @@ def best_aspect_ratios_for_padding(image_width, image_height):
     
     # Set aspect ratios based on orientation
     if is_portrait:
-        aspect_ratios = [(4, 5), (2, 3), (3, 4), (9, 16), (10, 8), (11, 14)]  # Portrait-friendly ratios
+        aspect_ratios = [(4, 5), (2, 3), (3, 4), (9, 16), (8, 10), (11, 14)]  # Portrait-friendly ratios
     else:
-        aspect_ratios = [(5, 4), (3, 2), (4, 3), (16, 9), (8, 10), (14, 11)]  # Landscape-friendly ratios
+        aspect_ratios = [(5, 4), (3, 2), (4, 3), (16, 9), (10, 8), (14, 11)]  # Landscape-friendly ratios
 
     padding_options = []
     

@@ -1,0 +1,96 @@
+.container {
+    max-width: 700px;
+    margin: 50px auto;
+}
+#container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 20px; /* Add some spacing above the button */
+} 
+.dropzone {
+    border: 2px dashed #6c757d;
+    border-radius: 10px;
+    padding: 30px;
+    text-align: center;
+    color: #6c757d;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+    position: relative; /* Needed for alignment */
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centers the content horizontally */
+    justify-content: center; /* Centers the content vertically */
+}
+.dropzone:hover {
+    background-color: #f8f9fa;
+}
+#dropzoneText {
+    font-size: 1rem;
+    color: #555;
+    margin-top: 10px;
+    display: block;
+    text-align: center;
+}
+
+#previewImage {
+    max-width: 100%;
+    height: auto;
+    margin-top: 10px;
+    display: block;
+}
+
+/* Set a consistent height and box-sizing for both select and input */
+.aspect-ratio-container .form-select,
+.aspect-ratio-container .form-control {
+    height: 38px; /* Consistent height for both elements */
+    box-sizing: border-box; /* Ensure padding and borders don’t affect size */
+    padding: 6px 12px; /* Align padding for both */
+    font-size: 16px; /* Ensure font size is the same */
+    border: 1px solid #ced4da; /* Match border styles */
+    border-radius: 4px; /* Consistent border radius */
+}
+
+/* Add gap between elements for better spacing */
+.aspect-ratio-container {
+    gap: 10px; /* Space between dropdown and input */
+    align-items: center; /* Vertically align children within the container */
+}
+
+/* Ensure alignment inside the dropdown */
+.form-select {
+    appearance: none; /* Removes default browser styles */
+    background-clip: padding-box; /* Prevents overlap issues */
+}
+
+/* Optional: Add consistent width if necessary */
+.form-select,
+.form-control {
+    margin-bottom: 10px;
+    flex: 1; /* Ensures both elements take up equal space */
+}
+
+.btn-primary {
+    margin-top: 20px;
+}
+
+#resetButton {
+    margin-top: 15px;
+    padding: 8px 16px;
+    background-color: #ff4d4d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+
+    /* Align the button to the center */
+    position: relative;
+    align-self: center; /* Centers within the dropzone */
+}
+
+#resetButton:hover {
+    background-color: #ff3333;
+}
+

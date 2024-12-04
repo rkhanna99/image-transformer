@@ -6,74 +6,9 @@
     <title>Image Upload</title>
     <!-- Add Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .container {
-            max-width: 700px;
-            margin: 50px auto;
-        }
-        #container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin-top: 20px; /* Add some spacing above the button */
-        } 
-        .dropzone {
-            border: 2px dashed #6c757d;
-            border-radius: 10px;
-            padding: 30px;
-            text-align: center;
-            color: #6c757d;
-            font-size: 18px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-            position: relative; /* Needed for alignment */
-            display: flex;
-            flex-direction: column;
-            align-items: center; /* Centers the content horizontally */
-            justify-content: center; /* Centers the content vertically */
-        }
-        .dropzone:hover {
-            background-color: #f8f9fa;
-        }
-        #dropzoneText {
-            font-size: 1rem;
-            color: #555;
-            margin-top: 10px;
-            display: block;
-            text-align: center;
-        }
+    <!-- Link the local style sheet up -->
+    <link rel="stylesheet" href="../static/css/styles.css">
 
-        #previewImage {
-            max-width: 100%;
-            height: auto;
-            margin-top: 10px;
-            display: block;
-        }
-        .form-control {
-            margin-bottom: 15px;
-        }
-        .btn-primary {
-            margin-top: 20px;
-        }
-        #resetButton {
-            margin-top: 15px;
-            padding: 8px 16px;
-            background-color: #ff4d4d;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background-color 0.3s ease;
-
-            /* Align the button to the center */
-            position: relative;
-            align-self: center; /* Centers within the dropzone */
-        }
-
-        #resetButton:hover {
-            background-color: #ff3333;
-        }
-    </style>
 </head>
 <body>
     <div class="container">
@@ -103,18 +38,31 @@
             <label for="photoName" class="form-label">Photo Name</label>
             <input type="text" id="photoName" name="photoName" class="form-control" placeholder="Enter photo name (e.g., Lake Oeschinensee)">
 
-            <!-- Aspect Ratio Dropdown -->
-            <label for="aspectRatio" class="form-label">Aspect Ratio</label>
-            <select id="aspectRatio" name="aspectRatio" class="form-select">
-                <option value="4:5">4:5</option>
-                <option value="3:2">3:2</option>
-                <option value="16:9">16:9</option>
-                <option value="1:1">1:1</option>
-                <option value="Custom">Custom</option>
-            </select>
+            <div class="mb-3">
+                <label for="aspectRatio" class="form-label">Aspect Ratio</label>
+                <div class="aspect-ratio-container d-flex align-items-center gap-2">
+                    <select id="aspectRatio" name="aspectRatio" class="form-select">
+                        <option value="Default">Default</option>
+                        <option value="4:5">4:5</option>
+                        <option value="3:2">3:2</option>
+                        <option value="16:9">16:9</option>
+                        <option value="1:1">1:1</option>
+                        <option value="Custom">Custom...</option>
+                    </select>
+                    <input 
+                        id="customAspectRatio" 
+                        type="text" 
+                        class="form-control d-none" 
+                        placeholder="Enter custom aspect ratio (e.g., 21:9)" 
+                    />
+                </div>
+            </div>
 
             <!-- Submit Button -->
             <button type="submit" class="btn btn-primary w-100">Submit</button>
+
+            <!-- Reset All Button -->
+            <button type="reset" class="btn btn-danger w-100">Reset</button>
         </form>
     </div>
 
@@ -122,83 +70,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <!-- JavaScript for Dropzone Interaction -->
-    <script>
-        const dropzone = document.getElementById('dropzone');
-        const dropzoneText = document.getElementById('dropzoneText');
-        const imageInput = document.getElementById('imageInput');
-        const previewImage = document.getElementById('previewImage');
-        const resetButton = document.getElementById("resetButton");
-    
-        // Drag-and-drop behavior
-        dropzone.addEventListener('click', () => {
-            console.log('Dropzone clicked. Opening file picker.');
-            imageInput.click();
-        });
-    
-        dropzone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            console.log('Drag over detected.');
-            dropzone.style.backgroundColor = '#e9ecef';
-        });
-    
-        dropzone.addEventListener('dragleave', () => {
-            console.log('Drag leave detected.');
-            dropzone.style.backgroundColor = '';
-        });
-    
-        dropzone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            console.log('File dropped.');
-            dropzone.style.backgroundColor = '';
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                console.log(`File dropped: ${files[0].name}`);
-                displayImagePreview(files[0]);
-            }
-        });
-    
-        imageInput.addEventListener('change', () => {
-            console.log('File selected.');
-            if (imageInput.files.length > 0) {
-                console.log(`File selected: ${imageInput.files[0].name}`);
-                displayImagePreview(imageInput.files[0]);
-            }
-        });
-
-        resetButton.addEventListener("click", () => {
-            resetDropzone();
-        });
-
-    
-        function displayImagePreview(file) {
-            console.log(`Attempting to preview file: ${file.name}`);
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                console.log('FileReader loaded file successfully.');
-                previewImage.src = e.target.result;
-                previewImage.classList.remove('d-none');
-                dropzoneText.textContent = file.name;
-                console.log("Successfully uploaded the file")
-
-                // Show the reset button
-                resetButton.style.display = "block";
-            };
-            reader.onerror = (e) => {
-                console.error('Error reading file:', e);
-            };
-            reader.readAsDataURL(file);
-        }
-
-        function resetDropzone() {
-            // Reset the text, image preview, and hide the reset button
-            dropzoneText.textContent = "Drag and drop an image here or click to upload";
-            previewImage.style.display = "none";
-            previewImage.src = "";
-            resetButton.style.display = "none";
-
-            // Clear the file input value
-            fileInput.value = "";
-        }
+    <script src="../static/js/script.js">   
     </script>
     
     
