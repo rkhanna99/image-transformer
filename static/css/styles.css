@@ -98,3 +98,18 @@
     background-color: #ff3333;
 }
 
+/* .section {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.5s ease-in-out;
+}
+
+.section.active {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
+} */

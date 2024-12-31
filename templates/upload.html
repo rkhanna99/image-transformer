@@ -12,58 +12,73 @@
 </head>
 <body>
     <div class="container">
-        <h1 class="text-center mb-4">Image Transformer</h1>
-        <form id="uploadForm" enctype="multipart/form-data">
-            <div id="container">
-                <!-- Drag and Drop Section -->
-                <div class="dropzone" id="dropzone">
-                    <p id="dropzoneText">Drag and drop an image here or click to upload</p>
-                    <input type="file" id="imageInput" name="image" class="form-control d-none" accept="image/*">
-                    <img id="previewImage" class="d-none" alt="Preview" style="max-width: 100%; margin-top: 20px;">
+        <!-- Main Upload Form Section -->
+        <div id="uploadSection" class="section">
+            <h1 class="text-center mb-4">Image Transformer</h1>
+            <form id="uploadForm" enctype="multipart/form-data">
+                <!-- Existing Upload Form Fields -->
+                <div id="container">
+                    <div class="dropzone" id="dropzone">
+                        <p id="dropzoneText">Drag and drop an image here or click to upload</p>
+                        <input type="file" id="imageInput" name="image" class="form-control d-none" accept="image/*">
+                        <img id="previewImage" class="d-none" alt="Preview" style="max-width: 100%; margin-top: 20px;">
+                    </div>
+                    <button id="resetButton" style="display: none;">Reset</button>
                 </div>
 
-                <!-- Adding the reset button -->
-                <button id="resetButton" style="display: none;">Reset</button>
-            </div>
-            
-            <!-- Latitude Input -->
-            <label for="latitude" class="form-label">Latitude</label>
-            <input type="text" id="latitude" name="latitude" class="form-control" placeholder="Enter latitude (e.g., 46.4975)">
+                <!-- Latitude Input -->
+                <label for="latitude" class="form-label">Latitude</label>
+                <input type="text" id="latitude" name="latitude" class="form-control" placeholder="Enter latitude (e.g., 46.4975)">
 
-            <!-- Longitude Input -->
-            <label for="longitude" class="form-label">Longitude</label>
-            <input type="text" id="longitude" name="longitude" class="form-control" placeholder="Enter longitude (e.g., 7.7149)">
+                <!-- Longitude Input -->
+                <label for="longitude" class="form-label">Longitude</label>
+                <input type="text" id="longitude" name="longitude" class="form-control" placeholder="Enter longitude (e.g., 7.7149)">
 
-            <!-- Photo Name Input -->
-            <label for="photoName" class="form-label">Photo Name</label>
-            <input type="text" id="photoName" name="photoName" class="form-control" placeholder="Enter photo name (e.g., Lake Oeschinensee)">
+                <!-- Photo Name Input -->
+                <label for="photoName" class="form-label">Photo Name</label>
+                <input type="text" id="photoName" name="photoName" class="form-control" placeholder="Enter photo name (e.g., Lake Oeschinensee)">
 
-            <div class="mb-3">
-                <label for="aspectRatio" class="form-label">Aspect Ratio</label>
-                <div class="aspect-ratio-container d-flex align-items-center gap-2">
-                    <select id="aspectRatio" name="aspectRatio" class="form-select">
-                        <option value="Default">Default</option>
-                        <option value="4:5">4:5</option>
-                        <option value="3:2">3:2</option>
-                        <option value="16:9">16:9</option>
-                        <option value="1:1">1:1</option>
-                        <option value="Custom">Custom...</option>
-                    </select>
-                    <input 
-                        id="customAspectRatio" 
-                        type="text" 
-                        class="form-control d-none" 
-                        placeholder="Enter custom aspect ratio (e.g., 21:9)" 
-                    />
+                <div class="mb-3">
+                    <label for="aspectRatio" class="form-label">Aspect Ratio</label>
+                    <div class="aspect-ratio-container d-flex align-items-center gap-2">
+                        <select id="aspectRatio" name="aspectRatio" class="form-select">
+                            <option value="Default">Default</option>
+                            <option value="4:5">4:5</option>
+                            <option value="3:2">3:2</option>
+                            <option value="16:9">16:9</option>
+                            <option value="1:1">1:1</option>
+                            <option value="Custom">Custom...</option>
+                        </select>
+                        <input 
+                            id="customAspectRatio" 
+                            type="text" 
+                            class="form-control d-none" 
+                            placeholder="Enter custom aspect ratio (e.g., 21:9)" 
+                        />
+                    </div>
                 </div>
+
+                <!-- Submit Button -->
+                <button type="submit" class="btn btn-primary w-100">Submit</button>
+                <!-- Reset All Button -->
+                <button type="reset" class="btn btn-danger w-100">Reset</button>
+            </form>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loadingSection" class="section" style="display: none; text-align: center;">
+            <h1>Processing...</h1>
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
             </div>
+        </div>
 
-            <!-- Submit Button -->
-            <button type="submit" class="btn btn-primary w-100">Submit</button>
-
-            <!-- Reset All Button -->
-            <button type="reset" class="btn btn-danger w-100">Reset</button>
-        </form>
+        <!-- Result Section -->
+        <div id="resultSection" class="section" style="display: none; text-align: center;">
+            <h1 class="mb-4">Transformed Image</h1>
+            <img id="transformedImage" style="max-width: 100%; margin-bottom: 20px;" alt="Transformed Image">
+            <button id="backButton" class="btn btn-secondary">Back</button>
+        </div>
     </div>
 
     <!-- Add Bootstrap JS (Optional) -->

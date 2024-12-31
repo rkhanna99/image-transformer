@@ -1,6 +1,6 @@
-import json, string, os, piexif, helpers as helpers
+import json, string, os, piexif
 from PIL import Image, ImageOps, ExifTags, ImageDraw, ImageFont
-from helpers import *
+from processing_scripts.helpers import *
 from PIL.ExifTags import TAGS, GPSTAGS
 from Pylette import extract_colors
 from Pylette import Palette
