@@ -130,7 +130,10 @@ function getAspectRatio() {
 
 // Handle the form submission
 document.getElementById("uploadForm").addEventListener("submit", async function (e) {
-    e.preventDefault();
+    e.preventDefault(); // Prevent default form submission behavior
+
+    // Show the loading screen
+    document.getElementById("loadingScreen").style.display = "flex";
 
     const formData = new FormData(this);
 
@@ -141,24 +144,24 @@ document.getElementById("uploadForm").addEventListener("submit", async function 
         });
 
         if (response.ok) {
-            // Transition to the result screen
+            // Redirect to results page with transformed image
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
 
-            // Display the transformed image
-            const transformedImage = document.getElementById("transformedImage");
-            transformedImage.src = url;
+            // Save the image URL in sessionStorage (or pass it via server-side rendering)
+            sessionStorage.setItem("transformedImageURL", url);
 
-            // Hide upload section and show result section
-            document.getElementById("uploadSection").style.display = "none";
-            document.getElementById("resultSection").style.display = "block";
+            // Redirect to results page
+            window.location.href = "/results";
         } else {
             const error = await response.json();
             alert(`Error: ${error.error}`);
+            document.getElementById("loadingScreen").style.display = "none"; // Hide loading screen on error
         }
     } catch (error) {
         console.error("Error:", error);
         alert("An unexpected error occurred.");
+        document.getElementById("loadingScreen").style.display = "none"; // Hide loading screen on error
     }
 });
 

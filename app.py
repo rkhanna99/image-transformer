@@ -1,10 +1,11 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session
 from werkzeug.utils import secure_filename
 from processing_scripts.image_transformer import process_image
 import os
 from PIL import Image
 
 app = Flask(__name__)
+app.secret_key = "your_secret_key"  # Needed for session management
 
 # Configure the upload folder
 UPLOAD_FOLDER = 'uploads'
@@ -13,6 +14,7 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 # Ensure the upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# Default route
 @app.route('/')
 def upload_form():
     """
@@ -20,6 +22,7 @@ def upload_form():
     """
     return render_template('upload.html')
 
+# Processing image endpoint
 @app.route('/process-image', methods=['POST'])
 def process_image_endpoint():
     # Check if a file is uploaded
@@ -65,14 +68,32 @@ def process_image_endpoint():
         )
 
         # Save the processed image to return
-        processed_image_path = os.path.join(app.config['UPLOAD_FOLDER'], f"processed_{filename}")
+        processed_image_filename = f"processed_{filename}"
+        processed_image_path = os.path.join(app.config['UPLOAD_FOLDER'], processed_image_filename)
         processed_image.save(processed_image_path)
 
-        # Return the processed image file
-        return send_file(processed_image_path, as_attachment=True)
+        # Store the processed image path in session for use in the results page
+        session['processed_image_url'] = f"/{processed_image_path}"
+
+        # Redirect to the results page
+        return redirect(url_for('results_page'))
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# Results page
+@app.route('/results')
+def results_page():
+    """
+    Renders the results page to display the processed image.
+    """
+    processed_image_url = session.get('processed_image_url')
+
+    if not processed_image_url:
+        # Redirect to the upload page if no image was processed
+        return redirect(url_for('upload_form'))
+
+    return render_template('results.html', image_url=processed_image_url)
 
 if __name__ == '__main__':
     app.run(debug=True)
