@@ -4,11 +4,11 @@ from processing_scripts.image_transformer import process_image
 import os
 from PIL import Image
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = "your_secret_key"  # Needed for session management
 
 # Configure the upload folder
-UPLOAD_FOLDER = 'uploads'
+UPLOAD_FOLDER = 'static/uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Ensure the upload folder exists
@@ -72,8 +72,10 @@ def process_image_endpoint():
         processed_image_path = os.path.join(app.config['UPLOAD_FOLDER'], processed_image_filename)
         processed_image.save(processed_image_path)
 
+        print(f"Processed image saved at: {processed_image_path}")
+
         # Store the processed image path in session for use in the results page
-        session['processed_image_url'] = f"/{processed_image_path}"
+        session['processed_image_url'] = url_for('static', filename=f"uploads/{processed_image_filename}")
 
         # Redirect to the results page
         return redirect(url_for('results_page'))
@@ -87,11 +89,13 @@ def results_page():
     """
     Renders the results page to display the processed image.
     """
-    processed_image_url = session.get('processed_image_url')
+    processed_image_url = session['processed_image_url']
 
     if not processed_image_url:
         # Redirect to the upload page if no image was processed
         return redirect(url_for('upload_form'))
+
+    print(f"Processed image URL: {processed_image_url}")
 
     return render_template('results.html', image_url=processed_image_url)
 
