@@ -47,6 +47,9 @@
             <!-- Placeholder for the processed image -->
             <img id="transformedImage" src="{{ image_url }}" alt="Transformed Image">
             <p id="resultText" class="text-muted">Your image has been processed successfully with the specified parameters.</p>
+            <a href="{{ url_for('download_file', filename=download_filename) }}" class="btn btn-primary" download>
+                Download Image
+            </a>
             <!-- Back to Upload Page Button -->
             <a href="/" class="btn btn-secondary">Upload Another Image</a>
         </div>

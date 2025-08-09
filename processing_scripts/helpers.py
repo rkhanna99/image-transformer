@@ -1,4 +1,5 @@
 import json, string, os, piexif, numpy as np, pytz
+from geopy.geocoders import Nominatim
 from PIL import Image, ImageOps, ExifTags, ImageDraw, ImageFont
 from PIL.ExifTags import TAGS, GPSTAGS
 from Pylette import extract_colors
@@ -77,83 +78,9 @@ def get_image_metadata(image_path, latitude: float=None, longitude: float=None):
 
         return metadata
 
-# Helper function to convert decimal coordinates into degrees, minutes, seconds tuple format
-def to_dms(value, loc):
-    """
-    Converts a decimal coordinate value to a tuple in degrees, minutes, and seconds (DMS) format, 
-    suitable for EXIF GPS metadata.
 
-    Parameters:
-        value (float): The decimal coordinate to convert (e.g., latitude or longitude).
-        loc (str): A string indicating the type of coordinate ('lat' or 'lon').
 
-    Returns:
-        tuple: A tuple containing the DMS representation as a list of (value, scale) pairs for 
-               degrees, minutes, and seconds, and the location identifier (e.g., 'lat' or 'lon').
-    """
-    degrees = int(value)
-    minutes = int((value - degrees) * 60)
-    seconds = round((value - degrees - minutes / 60) * 3600, 5)
-    return [(degrees, 1), (minutes, 1), (int(seconds * 100), 100)], loc
 
-# Helper function to convert degree, minutes, seconds tuple into decimal format
-def dms_to_decimal(dms, ref):
-    """
-    Converts a degrees, minutes, and seconds (DMS) tuple into a decimal coordinate, 
-    taking into account the directional reference.
-
-    Parameters:
-        dms (list): A list of tuples representing degrees, minutes, and seconds, 
-                    where each tuple is (value, scale).
-        ref (str): A reference direction ('N', 'S', 'E', or 'W') to determine 
-                   the sign of the decimal coordinate.
-
-    Returns:
-        float: The decimal representation of the coordinate. Negative if the 
-               reference is 'S' or 'W'.
-    """
-    degrees = dms[0][0] / dms[0][1]
-    minutes = dms[1][0] / dms[1][1]
-    seconds = dms[2][0] / dms[2][1]
-
-    decimal = degrees + (minutes / 60.0) + (seconds / 3600)
-
-    if ref in ['S', 'W']:
-        decimal = -decimal
-    return decimal
-
-# Helper function to format GPS metadata to a string
-def format_gps_decimal(metadata):
-    """
-    Formats GPS metadata into a human-readable string with latitude and longitude in decimal degrees.
-
-    Parameters:
-        metadata (dict): A dictionary containing GPS metadata, specifically 'GPSLatitude', 
-                         'GPSLatitudeRef', 'GPSLongitude', and 'GPSLongitudeRef'.
-
-    Returns:
-        str: A formatted string with latitude and longitude in decimal degrees (e.g., "37.7749° N, 122.4194° W"). 
-             Returns "Insufficient GPS metadata" if required metadata is missing.
-    """
-    if metadata['GPSLatitude'] and metadata['GPSLatitudeRef'] and metadata['GPSLongitudeRef'] and metadata['GPSLongitude']:
-        latitude_dms = metadata['GPSLatitude']
-        latitude_ref = metadata['GPSLatitudeRef']
-        longitude_dms = metadata['GPSLongitude']
-        longitude_ref = metadata['GPSLongitudeRef']
-
-        latitude = dms_to_decimal(latitude_dms, latitude_ref)
-        longitude = dms_to_decimal(longitude_dms, longitude_ref)
-
-        # Return the string
-        return f"{abs(latitude):.4f}° {latitude_ref}, {abs(longitude):.4f}° {longitude_ref}"
-    else:
-        return "Insufficient GPS metadata"
-
-# Helper function to dynamically determine the font size given an image
-def calculate_font_size(image, scale_factor):
-    font_size = int(min(image.size) * scale_factor)
-    print(font_size)
-    return font_size
 
 # Helper function that will get the shutter speed in the correct format given the 'ShutterSpeedValue' from the metadata
 def format_shutter_speed(ExposureTime: float) -> str:
@@ -223,6 +150,53 @@ def change_timezone(coordinates: tuple[float, float],  metadata: dict[str, Any])
 
     return formatted_local_datetime
 
+# Helper function to dynamically determine the font size given an image
+def calculate_font_size(image, scale_factor):
+    font_size = int(min(image.size) * scale_factor)
+    print(font_size)
+    return font_size
+
+# Helper function that will make adjustments to the font size if we detect any overlapping text (Compare by line)
+def adjust_line_font(left_text: str, right_text: str, font_path: str, initial_font_size: int, image_width: int):
+    # Set a default gap of 10 pixels and minimum font size
+    gap = 10
+    min_font_size = 10
+
+    # Initilaize an ImageDraw object
+    image = Image.new('RGB', (image_width, 100), color=(255, 255, 255))
+    draw = ImageDraw.Draw(image)
+
+    # Load the font
+    try:
+        font = ImageFont.truetype(font_path, initial_font_size)
+        print("Successfully loaded desired font for adjustment")
+    except IOError:
+        print("Failed to load desired font, using default font")
+        font = ImageFont.load_default()
+    
+    while True:
+        left_end_x = draw.textbbox((0, 0), left_text, font=font)[2]
+        right_width = draw.textbbox((0, 0), right_text, font=font)[2]
+        right_start_x = image_width - right_width
+
+        if left_end_x + gap < right_start_x:
+            # No overlap, return the current font size
+            print(f"No overlap detected with font size: {initial_font_size}")
+            break
+
+        if font.size > min_font_size:
+            # Reduce the font size and try again
+            new_font_size = font.size - 1
+            font = ImageFont.truetype(font_path, new_font_size)
+        else:
+            # If we reach the minimum font size, break the loop
+            print(f"Reached minimum font size: {min_font_size}")
+            break
+
+    scale_factor = new_font_size / initial_font_size
+    return new_font_size, scale_factor
+
+
 # Helper function to create an image with metadata details and dimensions of orginal image (Optional Image name too)
 def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height: int, img_name: str=None) -> Image:
     """
@@ -243,7 +217,7 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
     # Create a new blank image
     width, height = img_width, img_height
 
-    # Set our font and image sizes depending on whether we have a landscape or portrait picture
+    # Set our font and image sizes depending on whether we have a landscape or portrait picture this will be the initial size
     if img_width > img_height:
         image = Image.new('RGB', (width, height // 11), color=(255,255,255))
         larger_font_size = calculate_font_size(image, 0.30)
@@ -644,3 +618,96 @@ def setup_print_padding(original_image: Image, stacked_image: Image, base_pad_va
     print(f"Horizontal padding: {horizontal_padding} and Vertical padding: {vertical_padding}")
 
     return (horizontal_padding, vertical_padding)
+
+
+# ------------------------------------------------------ Location Helper Functions ------------------------------------------------------
+
+# Helper function to get the coordinates from an address input by the user
+def get_coordinates_from_address(address: str) -> tuple[float, float]:
+    # Initialize the user agent for Geopy
+    loc = Nominatim(user_agent="image_transformer")
+
+    # Geocode the input address
+    location = loc.geocode(address)
+
+    # Check if we got a valid location
+    if location:
+        print(f"Coordinates for {address}: {location.latitude}, {location.longitude}")
+        return (location.latitude, location.longitude)
+    else:
+        print(f"Could not find coordinates for address: {address}")
+        return (None, None)
+    
+
+# Helper function to format GPS metadata to a string
+def format_gps_decimal(metadata):
+    """
+    Formats GPS metadata into a human-readable string with latitude and longitude in decimal degrees.
+
+    Parameters:
+        metadata (dict): A dictionary containing GPS metadata, specifically 'GPSLatitude', 
+                         'GPSLatitudeRef', 'GPSLongitude', and 'GPSLongitudeRef'.
+
+    Returns:
+        str: A formatted string with latitude and longitude in decimal degrees (e.g., "37.7749° N, 122.4194° W"). 
+             Returns "Insufficient GPS metadata" if required metadata is missing.
+    """
+    if metadata['GPSLatitude'] and metadata['GPSLatitudeRef'] and metadata['GPSLongitudeRef'] and metadata['GPSLongitude']:
+        latitude_dms = metadata['GPSLatitude']
+        latitude_ref = metadata['GPSLatitudeRef']
+        longitude_dms = metadata['GPSLongitude']
+        longitude_ref = metadata['GPSLongitudeRef']
+
+        latitude = dms_to_decimal(latitude_dms, latitude_ref)
+        longitude = dms_to_decimal(longitude_dms, longitude_ref)
+
+        # Return the string
+        return f"{abs(latitude):.4f}° {latitude_ref}, {abs(longitude):.4f}° {longitude_ref}"
+    else:
+        return "Insufficient GPS metadata"
+    
+# Helper function to convert decimal coordinates into degrees, minutes, seconds tuple format
+def to_dms(value, loc):
+    """
+    Converts a decimal coordinate value to a tuple in degrees, minutes, and seconds (DMS) format, 
+    suitable for EXIF GPS metadata.
+
+    Parameters:
+        value (float): The decimal coordinate to convert (e.g., latitude or longitude).
+        loc (str): A string indicating the type of coordinate ('lat' or 'lon').
+
+    Returns:
+        tuple: A tuple containing the DMS representation as a list of (value, scale) pairs for 
+               degrees, minutes, and seconds, and the location identifier (e.g., 'lat' or 'lon').
+    """
+    degrees = int(value)
+    minutes = int((value - degrees) * 60)
+    seconds = round((value - degrees - minutes / 60) * 3600, 5)
+    return [(degrees, 1), (minutes, 1), (int(seconds * 100), 100)], loc
+
+# Helper function to convert degree, minutes, seconds tuple into decimal format
+def dms_to_decimal(dms, ref):
+    """
+    Converts a degrees, minutes, and seconds (DMS) tuple into a decimal coordinate, 
+    taking into account the directional reference.
+
+    Parameters:
+        dms (list): A list of tuples representing degrees, minutes, and seconds, 
+                    where each tuple is (value, scale).
+        ref (str): A reference direction ('N', 'S', 'E', or 'W') to determine 
+                   the sign of the decimal coordinate.
+
+    Returns:
+        float: The decimal representation of the coordinate. Negative if the 
+               reference is 'S' or 'W'.
+    """
+    degrees = dms[0][0] / dms[0][1]
+    minutes = dms[1][0] / dms[1][1]
+    seconds = dms[2][0] / dms[2][1]
+
+    decimal = degrees + (minutes / 60.0) + (seconds / 3600)
+
+    if ref in ['S', 'W']:
+        decimal = -decimal
+    return decimal
+

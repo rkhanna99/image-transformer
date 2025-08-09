@@ -22,7 +22,7 @@ Palette.display = local_display
 # Image processing
 # --------------------------------------------------------------------
 
-def process_image(image_path: string, latitude: float=None, longitude: float=None, used_for_print=True, print_aspect_ratio: tuple[int, int]=None, photo_title: string=None) -> Image:
+def process_image(image_path: string, latitude: float=None, longitude: float=None, used_for_print=True, print_aspect_ratio: tuple[int, int]=None, photo_title: string=None, local_save: bool=False) -> Image:
     """
     Processes an image by extracting metadata, generating a color palette, 
     and combining these elements into a final image with optional print-friendly borders.
@@ -48,6 +48,9 @@ def process_image(image_path: string, latitude: float=None, longitude: float=Non
         photo_title (str, optional): 
             Title for the photo to be included in the metadata section. 
             Default is None.
+        local_save (bool, optional):
+            If True, saves the processed image to a local directory. 
+            Default is False.
 
     Returns:
         Image: 
@@ -139,10 +142,10 @@ def process_image(image_path: string, latitude: float=None, longitude: float=Non
     img_with_border = ImageOps.expand(new_image, border=border_size, fill=border_color)
     print(f"Final Image Dimensions: {img_with_border.width} * {img_with_border.height}")
 
-    # Save the new image
-
-    destination_folder = "C:/Users/rahul/OneDrive/Pictures/Switzerland 2024/Image Transformer JPGs/" if used_for_print != True else "C:/Users/rahul/OneDrive/Pictures/Switzerland 2024/Image Transformer JPGs/Prints/"
-    save_image(img_with_border, image_path, destination_folder)
+    # Save the new image if local_save is True
+    if local_save:
+        destination_folder = "C:/Users/rahul/OneDrive/Pictures/Switzerland 2024/Image Transformer JPGs/" if used_for_print != True else "C:/Users/rahul/OneDrive/Pictures/Switzerland 2024/Image Transformer JPGs/Prints/"
+        save_image(img_with_border, image_path, destination_folder)
 
     # Display the image with border
 
