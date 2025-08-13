@@ -1,7 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, send_from_directory
 from werkzeug.utils import secure_filename
 from processing_scripts.image_transformer import process_image
-import os
+from processing_scripts.helpers import get_coordinates_from_address
+from processing_scripts.helpers import cleanup_directory
+import os, atexit
 from PIL import Image
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -13,6 +15,9 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # Ensure the upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Clear the uploads folder on startup
+cleanup_directory(UPLOAD_FOLDER)
 
 # Default route
 @app.route('/')
@@ -41,10 +46,26 @@ def process_image_endpoint():
     file.save(filepath)
 
     # Retrieve optional parameters from the request
+    address = request.form.get('address')
     latitude = request.form.get('latitude', type=float)
     longitude = request.form.get('longitude', type=float)
     photo_title = request.form.get('photoName')
     aspect_ratio = request.form.get('aspectRatio', 'Default')
+    print(f"Address: {address}, Latitude: {latitude}, Longitude: {longitude}, Photo Title: {photo_title}, Aspect Ratio: {aspect_ratio}")
+
+    # Check if we have received latitude and longitude
+    if latitude is None and longitude is None:
+        print("No latitude and longitude provided.")
+        # If address is provided, get coordinates from address
+        if address:
+            coordinates = get_coordinates_from_address(address)
+            print(f"Coordinates from address: {coordinates}")
+            if coordinates:
+                latitude, longitude = coordinates
+            else:
+                return jsonify({"error": "Invalid address"}), 400
+        else:
+            return jsonify({"error": "Address or Latitude and Longitude must be provided"}), 400
 
     # Convert aspect ratio if custom
     print_aspect_ratio = None
@@ -109,6 +130,10 @@ def download_file(filename):
     Allows users to download the processed image file.
     """
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
+
+
+# Cleanup the upload directory on exit
+atexit.register(cleanup_directory, UPLOAD_FOLDER)
 
 if __name__ == '__main__':
     app.run(debug=True)

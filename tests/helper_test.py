@@ -5,7 +5,7 @@ class TestHelpers(unittest.TestCase):
 
     def test_get_coordinates_from_address(self):
         # Test with a valid address
-        address = "1707 Calderdale Ct, Hanover, MD 21076"
+        address = "112 North Main St, Windsor, NJ"
         coordinates = get_coordinates_from_address(address)
         self.assertIsInstance(coordinates, tuple)
         self.assertEqual(len(coordinates), 2)

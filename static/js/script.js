@@ -165,6 +165,12 @@ document.getElementById("uploadForm").addEventListener("submit", async function 
     }
 });
 
+// Handle the reset all button (Just do a full reload)
+document.getElementById("resetAllBtn").addEventListener("click", function () {
+    console.log("Reset all button clicked. Reloading the page.");
+    location.reload(); // Reload the page to reset everything
+});
+
 // Handle the back button to return to the upload form
 document.getElementById("backButton").addEventListener("click", function () {
     document.getElementById("uploadSection").style.display = "block";

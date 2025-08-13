@@ -1,4 +1,4 @@
-import json, string, os, piexif, numpy as np, pytz
+import json, string, os, piexif, shutil, numpy as np, pytz
 from geopy.geocoders import Nominatim
 from PIL import Image, ImageOps, ExifTags, ImageDraw, ImageFont
 from PIL.ExifTags import TAGS, GPSTAGS
@@ -182,6 +182,7 @@ def adjust_line_font(left_text: str, right_text: str, font_path: str, initial_fo
         if left_end_x + gap < right_start_x:
             # No overlap, return the current font size
             print(f"No overlap detected with font size: {initial_font_size}")
+            new_font_size = font.size
             break
 
         if font.size > min_font_size:
@@ -259,6 +260,17 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
     print("second_line_left: ", second_line_left)
     print("second_line_right: ", second_line_right)
 
+    # Check if we need to adjust the font size based on the text length of the first line
+    adjusted_font_size, scale_factor = adjust_line_font(first_line_left, first_line_right, "fonts/timesbd.ttf", larger_font_size, img_width)
+    if adjusted_font_size != larger_font_size:
+        print(f"Adjusted font size from {larger_font_size} to {adjusted_font_size} with scale factor {scale_factor}")
+        # Recalculate the font sizes based on the new adjusted font size
+        larger_font_size = adjusted_font_size
+        smaller_font_size = int(smaller_font_size * scale_factor)
+        font_bold = ImageFont.truetype("fonts/timesbd.ttf", larger_font_size)
+        font_regular = ImageFont.truetype("fonts/times.ttf", smaller_font_size)
+
+    # Calculate the starting positions for the text lines based on the image dimensions
     first_line_start = get_proportions(img_width, img_height, 50)
     second_line_start = get_proportions(img_width, img_height, 250)
 
@@ -625,7 +637,7 @@ def setup_print_padding(original_image: Image, stacked_image: Image, base_pad_va
 # Helper function to get the coordinates from an address input by the user
 def get_coordinates_from_address(address: str) -> tuple[float, float]:
     # Initialize the user agent for Geopy
-    loc = Nominatim(user_agent="image_transformer")
+    loc = Nominatim(user_agent="image_transformer", timeout=10)
 
     # Geocode the input address
     location = loc.geocode(address)
@@ -711,3 +723,23 @@ def dms_to_decimal(dms, ref):
         decimal = -decimal
     return decimal
 
+
+
+# ---------------------------------------------------------- Cleanup Helper Functions ----------------------------------------------------------
+
+# Helper function that will cleanup a directory by removing all files and subdirectories (Will be used on application startup and exit)
+def cleanup_directory(directory: str):
+    # Check if the specified directory exists
+    if os.path.exists(directory):
+        for filename in os.listdir(directory):
+            file_path = os.path.join(directory, filename)
+            try:
+                # Check if it's a file or directory and remove accordingly
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    print(f"Removed file: {file_path}")
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+                    print(f"Removed directory: {file_path}")
+            except Exception as e:
+                print(f"Error removing {file_path}: {e}")

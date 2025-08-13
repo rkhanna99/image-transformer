@@ -95,7 +95,7 @@ def process_image(image_path: string, latitude: float=None, longitude: float=Non
 
     # Get the image metadata and use that to generate a separate image
     # Here we can use the optional latitude, longitude, and photo title
-
+    print (f"Latitude: {latitude}, Longitude: {longitude}, Photo Title: {photo_title}")
     metadata = get_image_metadata(image_path, latitude, longitude)
     print(metadata)
     metadata_image = generate_metadata_image(metadata, img_dimensions["img_width"], img_dimensions["img_height"], photo_title)
