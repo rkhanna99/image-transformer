@@ -16,3 +16,15 @@ class TestHelpers(unittest.TestCase):
         get_coordinates_from_address(invalid_address)
         if coordinates == (None, None):
             self.assertTrue(True)
+
+    def test_calculate_padding_for_aspect_ratio(self):
+        # Test with a valid aspect ratio
+        aspect_ratio = (3, 4)
+        test_image_path = "C:/Users/rahul/OneDrive/Pictures/May 2025/JPGs/DSCF4351.JPG"
+        img = Image.open(test_image_path)
+        img = ImageOps.exif_transpose(img)
+        border_percentage = 50
+
+        img_with_border = create_simple_border(img, aspect_ratio, border_percentage)
+        img_with_border.show()
+        print(f"Image with border size: {img_with_border.size}")

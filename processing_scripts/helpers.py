@@ -334,23 +334,40 @@ def calculate_padding_for_aspect_ratio(img: Image, aspect_ratio: tuple[int, int]
     img_width, img_height = img.size
     img_ratio = img_width / img_height
 
-    # Set the larger side to our desired padding
-    if img_width > img_height:
+    # Initialize the padding values to None
+    horizontal_padding = None
+    vertical_padding = None
+
+     # Handle square images explicitly
+    if img_width == img_height:
+        # Decide based on desired aspect ratio
+        if aspect_ratio[0] >= aspect_ratio[1]:
+            horizontal_padding = target_padding
+            # Compute vertical padding for matching aspect ratio
+            new_width = img_width + (2 * horizontal_padding)
+            vertical_padding = int(((new_width * aspect_ratio[1]) / aspect_ratio[0] - img_height) / 2)
+        else:
+            vertical_padding = target_padding
+            # Compute horizontal padding for matching aspect ratio
+            new_height = img_height + (2 * vertical_padding)
+            horizontal_padding = int(((new_height * aspect_ratio[0]) / aspect_ratio[1] - img_width) / 2)
+
+    # Non-square images
+    elif img_width > img_height:
         vertical_padding = target_padding
+        new_height = img_height + (2 * vertical_padding)
+        horizontal_padding = int(((new_height * aspect_ratio[0]) / aspect_ratio[1] - img_width) / 2)
     else:
         horizontal_padding = target_padding
+        new_width = img_width + (2 * horizontal_padding)
+        vertical_padding = int(((new_width * aspect_ratio[1]) / aspect_ratio[0] - img_height) / 2)
 
-    # Calculate the padding for the other direction
-    if not horizontal_padding:
-        # Multiply by 2 as we add the padding to 2 sides
-        new_height = img_height + (2 * target_padding)
-        horizontal_padding = ((new_height * aspect_ratio[0]) // aspect_ratio[1]) // 2
-    else:
-        # Multiply by 2 as we add the padding to 2 sides
-        new_width = img_width + (2 * target_padding)
-        vertical_padding = ((new_width * aspect_ratio[0]) // aspect_ratio[1]) // 2
+    # Ensure no negative paddings
+    horizontal_padding = max(0, int(horizontal_padding))
+    vertical_padding = max(0, int(vertical_padding))
 
-    return int(horizontal_padding), int(vertical_padding)
+    return horizontal_padding, vertical_padding
+
 
 # Helper function to dynamically get the border size, whitespace between image and palette, and other proportions (40 MP image with a 3:2 aspect ratio should have border of 750)
 def get_proportions(image_width: int, image_height: int, reference_value: int) -> int:
@@ -743,3 +760,52 @@ def cleanup_directory(directory: str):
                     print(f"Removed directory: {file_path}")
             except Exception as e:
                 print(f"Error removing {file_path}: {e}")
+
+
+# ----------------------------------------------- Baisc Border Helper Functions ----------------------------------------------------------
+
+# Helper function to create a simple white border around an image given an image, desired aspect ratio, and border size
+def create_simple_border(image: Image, target_aspect_ratio: tuple[int, int], border_percentage: int) -> Image:
+    """
+    Creates a simple white border around an image, adjusting the image size to fit a specified aspect ratio.
+
+    Parameters:
+        image (Image): A PIL Image instance to which the border will be added.
+        target_aspect_ratio (tuple[int, int]): The desired aspect ratio as a tuple (width, height).
+        border_percentage (int): The size of the border to be added in pixels.
+
+    Returns:
+        Image: A new PIL Image instance with the added border and adjusted size.
+    """
+    # Get the desired aspect ratio and the current aspect ratio of the image
+    target_width, target_height = target_aspect_ratio
+    img_width, img_height = image.size
+
+    current_aspect_ratio = img_width / img_height
+    target_aspect_ratio_value = target_width / target_height
+
+    # Initially we will adjust the aspect ratio of the image by padding only on one side
+    if current_aspect_ratio > target_aspect_ratio_value:
+        # Image is too wide -> add padding to the top and bottom
+        new_height = round(img_width / target_aspect_ratio_value)
+        padding_needed = new_height - img_height
+        print(f"Original Height: {img_height}, New Height: {new_height}, Padding needed: {padding_needed}")
+        padding = (0, (padding_needed // 2), 0, (padding_needed // 2)) # (left, top, right, bottom)
+        img = ImageOps.expand(image, border=padding, fill="white")
+    elif current_aspect_ratio < target_aspect_ratio_value:
+        # Image is too tall -> add padding to the left and right
+        new_width = round(img_height * target_aspect_ratio_value)
+        padding_needed = new_width - img_width
+        print(f"Original Width: {img_width}, New Width: {new_width}, Padding needed: {padding_needed}")
+        padding = ((padding_needed // 2), 0, (padding_needed // 2), 0)
+        img = ImageOps.expand(image, border=padding, fill="white")
+
+    img.show()
+    print(f"Image Dimensions after aspect ratio adjustment: {img.width} x {img_height}")
+
+
+    # Now we add the uniform border around the expanded image
+    border_size = int(min(img.size) * (border_percentage / 100))
+    img = ImageOps.expand(img, border=border_size, fill="white")
+
+    return img
