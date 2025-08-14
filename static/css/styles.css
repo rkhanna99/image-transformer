@@ -142,3 +142,42 @@
         transform: translateY(0);
     }
 }
+
+.aspect-ratio-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.aspect-ratio-buttons button {
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    background: white;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.aspect-ratio-buttons button.active {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.aspect-ratio-buttons button:hover {
+    background: #e9ecef;
+}
+
+#borderControls {
+    margin-top: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+#borderSlider {
+    flex: 1;
+}
+#borderValue {
+    min-width: 40px;
+    text-align: right;
+}

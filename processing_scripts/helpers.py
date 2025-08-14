@@ -777,35 +777,30 @@ def create_simple_border(image: Image, target_aspect_ratio: tuple[int, int], bor
     Returns:
         Image: A new PIL Image instance with the added border and adjusted size.
     """
-    # Get the desired aspect ratio and the current aspect ratio of the image
-    target_width, target_height = target_aspect_ratio
+    img_width, img_height = image.size
+    current_aspect_ratio = img_width / img_height
+    target_aspect_ratio_value = target_aspect_ratio[0] / target_aspect_ratio[1]
+
+    # Step 1: Add constant uniform border first
+    uniform_border_size = int(min(img_width, img_height) * (border_percentage / 100)) // 2
+    image = ImageOps.expand(image, border=uniform_border_size, fill="white")
     img_width, img_height = image.size
 
+    # Step 2: Adjust aspect ratio by padding evenly
     current_aspect_ratio = img_width / img_height
-    target_aspect_ratio_value = target_width / target_height
-
-    # Initially we will adjust the aspect ratio of the image by padding only on one side
     if current_aspect_ratio > target_aspect_ratio_value:
-        # Image is too wide -> add padding to the top and bottom
+        # Too wide → pad top/bottom equally
         new_height = round(img_width / target_aspect_ratio_value)
         padding_needed = new_height - img_height
-        print(f"Original Height: {img_height}, New Height: {new_height}, Padding needed: {padding_needed}")
-        padding = (0, (padding_needed // 2), 0, (padding_needed // 2)) # (left, top, right, bottom)
-        img = ImageOps.expand(image, border=padding, fill="white")
+        padding = (0, padding_needed // 2, 0, padding_needed - (padding_needed // 2))
     elif current_aspect_ratio < target_aspect_ratio_value:
-        # Image is too tall -> add padding to the left and right
+        # Too tall → pad left/right equally
         new_width = round(img_height * target_aspect_ratio_value)
         padding_needed = new_width - img_width
-        print(f"Original Width: {img_width}, New Width: {new_width}, Padding needed: {padding_needed}")
-        padding = ((padding_needed // 2), 0, (padding_needed // 2), 0)
-        img = ImageOps.expand(image, border=padding, fill="white")
+        padding = (padding_needed // 2, 0, padding_needed - (padding_needed // 2), 0)
+    else:
+        # Already correct aspect ratio
+        padding = (0, 0, 0, 0)
 
-    img.show()
-    print(f"Image Dimensions after aspect ratio adjustment: {img.width} x {img_height}")
-
-
-    # Now we add the uniform border around the expanded image
-    border_size = int(min(img.size) * (border_percentage / 100))
-    img = ImageOps.expand(img, border=border_size, fill="white")
-
-    return img
+    image = ImageOps.expand(image, border=padding, fill="white")
+    return image
