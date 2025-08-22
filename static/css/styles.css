@@ -103,6 +103,11 @@
     margin-bottom: 0;
 }
 
+/* Remove top margin from all buttons in aspect ratio container */
+.aspect-ratio-container .btn {
+    margin-top: 0;
+}
+
 /* Set a consistent height and box-sizing for both select and input */
 .aspect-ratio-container .form-select,
 .aspect-ratio-container .form-control {

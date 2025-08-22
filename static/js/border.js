@@ -13,7 +13,6 @@ const resetButton = document.getElementById('resetButton');
 
 // New elements for Bootswatch dropdown
 const selectedAspectButton = document.getElementById('selectedAspectRatio');
-const aspectSelect = document.getElementById('aspectRatio');
 const customAspectInput = document.getElementById('customAspectRatio');
 const aspectDropdownItems = document.querySelectorAll('.dropdown-item[data-value]');
 
@@ -21,7 +20,7 @@ console.log("=== Debug: Element References ===");
 console.log("Elements loaded:", {
     dropzone, imageInput, previewCanvas, previewImage,
     borderSlider, borderValue, controls, saveBtn, dropzoneText, resetButton,
-    selectedAspectButton, aspectSelect, customAspectInput
+    selectedAspectButton, customAspectInput
 });
 
 if (!dropzone) console.error("❌ Dropzone not found!");
@@ -33,22 +32,33 @@ const ctx = previewCanvas?.getContext('2d', { willReadFrequently: true });
 let originalImage = null;
 const MAX_PREVIEW = 800; // Reduced for better performance
 
+// Store current aspect ratio
+let currentAspectRatio = 'Default';
+
 // ---- Helpers ----
 function parseAspect(str) {
-    if (!str || str.toLowerCase() === 'custom') return null;
+    if (!str || str === 'Default' || str === 'Custom') return null;
     const [w, h] = str.split(':').map(Number);
     if (!w || !h) return null;
     return w / h;
 }
 
 function getActiveAspectRatio() {
-    // Use the hidden select value instead of button classes
-    return parseAspect(aspectSelect ? aspectSelect.value : null);
+    return parseAspect(currentAspectRatio);
 }
 
+// Helper function to get target aspect ratio as tuple [width, height]
+function getTargetAspectRatioTuple() {
+    if (!currentAspectRatio || currentAspectRatio === 'Default' || currentAspectRatio === 'Custom') {
+        return null;
+    }
+    const [w, h] = currentAspectRatio.split(':').map(Number);
+    if (!w || !h) return null;
+    return [w, h];
+}
 // Draws the preview with current border settings
 function drawPreview() {
-    console.log("drawPreview called with border:", borderSlider?.value, "aspect:", aspectSelect?.value);
+    console.log("drawPreview called with border:", borderSlider?.value, "aspect:", currentAspectRatio);
     if (!originalImage || !ctx || !previewCanvas) {
         console.warn("Cannot draw preview - missing elements or image");
         return;
@@ -58,33 +68,78 @@ function drawPreview() {
     const imgW = originalImage.naturalWidth;
     const imgH = originalImage.naturalHeight;
     
-    // Calculate scaling
+    // Parse target aspect ratio
+    let targetAspectRatioValue = null;
+    if (currentAspectRatio && currentAspectRatio !== 'Default' && currentAspectRatio !== 'Custom') {
+        const [w, h] = currentAspectRatio.split(':').map(Number);
+        if (w && h) {
+            targetAspectRatioValue = w / h;
+        }
+    }
+    
+    // Calculate scaling for preview
     const scale = Math.min(1, MAX_PREVIEW / Math.max(imgW, imgH));
     const scaledW = Math.round(imgW * scale);
     const scaledH = Math.round(imgH * scale);
     
-    // Add border to canvas size
-    const borderPixels = Math.round((borderSize / 100) * Math.max(scaledW, scaledH));
-    const canvasW = scaledW + (borderPixels * 2);
-    const canvasH = scaledH + (borderPixels * 2);
+    // Step 1: Add uniform border (like Python's first step)
+    const uniformBorderSize = Math.round(Math.min(scaledW, scaledH) * (borderSize / 100)) / 2;
+    let borderedWidth = scaledW + (uniformBorderSize * 2);
+    let borderedHeight = scaledH + (uniformBorderSize * 2);
     
-    // Set canvas size
-    previewCanvas.width = canvasW;
-    previewCanvas.height = canvasH;
+    // Step 2: Adjust for aspect ratio if needed (like Python's second step)
+    let finalWidth = borderedWidth;
+    let finalHeight = borderedHeight;
+    let aspectPadding = { left: 0, top: 0, right: 0, bottom: 0 };
     
-    // Clear canvas
-    ctx.clearRect(0, 0, canvasW, canvasH);
-    
-    // Fill with white background (the border)
-    if (borderPixels > 0) {
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvasW, canvasH);
+    if (targetAspectRatioValue) {
+        const currentAspect = borderedWidth / borderedHeight;
+        
+        if (currentAspect > targetAspectRatioValue) {
+            // Too wide → pad top/bottom equally
+            const newHeight = Math.round(borderedWidth / targetAspectRatioValue);
+            const paddingNeeded = newHeight - borderedHeight;
+            aspectPadding.top = Math.round(paddingNeeded / 2);
+            aspectPadding.bottom = paddingNeeded - aspectPadding.top;
+            finalHeight = newHeight;
+        } else if (currentAspect < targetAspectRatioValue) {
+            // Too tall → pad left/right equally
+            const newWidth = Math.round(borderedHeight * targetAspectRatioValue);
+            const paddingNeeded = newWidth - borderedWidth;
+            aspectPadding.left = Math.round(paddingNeeded / 2);
+            aspectPadding.right = paddingNeeded - aspectPadding.left;
+            finalWidth = newWidth;
+        }
+        // If equal, no padding needed
     }
     
-    // Draw the image on top of the white background
-    ctx.drawImage(originalImage, borderPixels, borderPixels, scaledW, scaledH);
+    // Set canvas size to final dimensions
+    previewCanvas.width = finalWidth;
+    previewCanvas.height = finalHeight;
     
-    console.log("Preview drawn with border:", borderPixels, "pixels");
+    // Clear canvas with white background
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, finalWidth, finalHeight);
+    
+    // Calculate image position with both border and aspect ratio padding
+    const imageX = uniformBorderSize + aspectPadding.left;
+    const imageY = uniformBorderSize + aspectPadding.top;
+    const imageWidth = scaledW;
+    const imageHeight = scaledH;
+    
+    // Draw the image
+    ctx.drawImage(originalImage, imageX, imageY, imageWidth, imageHeight);
+    
+    console.log("Preview drawn:", {
+        originalSize: `${imgW}x${imgH}`,
+        scaledSize: `${scaledW}x${scaledH}`,
+        uniformBorder: uniformBorderSize,
+        borderedSize: `${borderedWidth}x${borderedHeight}`,
+        aspectPadding: aspectPadding,
+        finalSize: `${finalWidth}x${finalHeight}`,
+        imagePosition: `${imageX},${imageY}`,
+        targetAspectRatio: targetAspectRatioValue
+    });
 }
 
 // ---- File selection + DnD ----
@@ -107,6 +162,19 @@ function handleSelectedFile(file) {
         img.onload = () => {
             console.log("Image loaded into memory");
             originalImage = img;
+
+            // Update the aspect ratio dropdown options based on the orientation of the image
+            const width = img.width;
+            const height = img.height;
+            console.log(`Image dimensions: ${width}x${height}`);
+
+            if (width > height) {
+                updateAspectRatioOptions('landscape');
+            } else if (width < height) {
+                updateAspectRatioOptions('portrait');
+            } else {
+                updateAspectRatioOptions('square');
+            }
             
             // Show canvas and hide dropzone text
             previewCanvas.classList.remove('d-none');
@@ -136,42 +204,14 @@ function handleSelectedFile(file) {
 
 // ---- Aspect Ratio Dropdown Functionality ----
 function setupAspectRatioDropdown() {
-    if (!selectedAspectButton || !aspectSelect || !customAspectInput) {
+    if (!selectedAspectButton || !customAspectInput) {
         console.warn("Aspect ratio dropdown elements not found");
         return;
     }
 
-    // Handle dropdown item clicks
-    aspectDropdownItems.forEach(item => {
-        item.addEventListener('click', function(e) {
-            e.preventDefault();
-            const value = this.getAttribute('data-value');
-            const text = this.textContent;
-            
-            // Update selected button text
-            selectedAspectButton.textContent = text;
-            
-            // Update hidden select value
-            aspectSelect.value = value;
-            
-            // Show/hide custom input
-            if (value === 'Custom') {
-                customAspectInput.classList.remove('d-none');
-                customAspectInput.focus();
-            } else {
-                customAspectInput.classList.add('d-none');
-                customAspectInput.classList.remove('is-invalid', 'is-valid');
-            }
-            
-            console.log("Aspect ratio selected:", value);
-            
-            // Update preview if image is loaded
-            if (originalImage) {
-                drawPreview();
-            }
-        });
-    });
-
+    // Initial setup - we'll populate this dynamically when an image is loaded
+    // The click handlers are now added in updateAspectRatioOptions
+    
     // Handle custom aspect ratio input
     customAspectInput.addEventListener('input', function() {
         // Validate custom aspect ratio format (e.g., "16:9")
@@ -183,8 +223,8 @@ function setupAspectRatioDropdown() {
             // Update the selected button text to show custom value
             selectedAspectButton.textContent = this.value;
             
-            // Update the hidden select value
-            aspectSelect.value = this.value;
+            // Update current aspect ratio to custom value
+            currentAspectRatio = this.value;
             
             // Update preview if image is loaded
             if (originalImage) {
@@ -194,15 +234,10 @@ function setupAspectRatioDropdown() {
             console.log("Custom aspect ratio:", this.value);
         } else if (this.value.trim() !== '') {
             this.classList.remove('is-valid');
-            this.classList.add('is-valid'); // Changed to is-valid for better UX
+            this.classList.add('is-invalid');
         } else {
             this.classList.remove('is-invalid', 'is-valid');
         }
-    });
-
-    // Also trigger change when the hidden select changes
-    aspectSelect.addEventListener('change', function() {
-        console.log("Aspect ratio form value:", this.value);
     });
 }
 
@@ -291,10 +326,13 @@ if (aspectButtons.length > 0) {
     aspectButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             console.log("Aspect button clicked:", btn.dataset.aspect);
-            // For compatibility, you might want to update the new dropdown too
-            if (aspectSelect && selectedAspectButton) {
-                aspectSelect.value = btn.dataset.aspect;
+            // For compatibility, update the new dropdown too
+            if (selectedAspectButton) {
+                currentAspectRatio = btn.dataset.aspect;
                 selectedAspectButton.textContent = btn.textContent;
+                if (customAspectInput) {
+                    customAspectInput.classList.add('d-none');
+                }
                 drawPreview();
             }
         });
@@ -321,9 +359,9 @@ if (resetButton) {
         }
         
         // Reset aspect ratio dropdown
-        if (selectedAspectButton && aspectSelect) {
+        if (selectedAspectButton) {
             selectedAspectButton.textContent = 'Default';
-            aspectSelect.value = 'Default';
+            currentAspectRatio = 'Default';
             if (customAspectInput) {
                 customAspectInput.classList.add('d-none');
                 customAspectInput.value = '';
@@ -353,36 +391,57 @@ if (borderForm) {
         formData.append('borderSize', borderSlider ? borderSlider.value : 0);
         
         // Add aspect ratio to form data
-        if (aspectSelect) {
-            let aspectValue = aspectSelect.value;
-            // If custom input is visible and has valid value, use that instead
-            if (aspectValue === 'Custom' && customAspectInput && 
-                customAspectInput.value && !customAspectInput.classList.contains('is-invalid')) {
-                aspectValue = customAspectInput.value;
-            }
-            formData.append('aspectRatio', aspectValue);
+        let aspectValue = currentAspectRatio;
+        // If custom input is visible and has valid value, use that instead
+        if (currentAspectRatio === 'Custom' && customAspectInput && 
+            customAspectInput.value && !customAspectInput.classList.contains('is-invalid')) {
+            aspectValue = customAspectInput.value;
         }
+        formData.append('aspectRatio', aspectValue);
 
         try {
             // Show loading
             const loadingScreen = document.getElementById('loadingScreen');
             if (loadingScreen) loadingScreen.style.display = 'flex';
             
-            const response = await fetch('/white_border', {
+            const response = await fetch('/white-border', {
                 method: 'POST',
                 body: formData
             });
 
-            if (!response.ok) throw new Error('Failed to process border');
+            // Check if response is JSON or HTML redirect
+            const contentType = response.headers.get('content-type');
+            
+            if (contentType && contentType.includes('application/json')) {
+                // Handle JSON response (success or error)
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to process border');
+                }
 
-            const data = await response.json();
-            console.log("Response JSON:", data);
-
-            if (data.processed_image_url) {
-                // Hide canvas and show the processed image
-                previewCanvas.classList.add('d-none');
-                previewImage.src = data.processed_image_url;
-                previewImage.classList.remove('d-none');
+                if (data.processed_image_url) {
+                    // Hide canvas and show the processed image
+                    previewCanvas.classList.add('d-none');
+                    previewImage.src = data.processed_image_url;
+                    previewImage.classList.remove('d-none');
+                }
+            } else {
+                // Handle HTML response (redirect)
+                // The server is redirecting us, so we should follow the redirect
+                const redirectUrl = response.url;
+                if (redirectUrl) {
+                    window.location.href = redirectUrl;
+                } else {
+                    // If no redirect URL, try to parse the response as text
+                    const text = await response.text();
+                    if (text.includes('results_page')) {
+                        // If the HTML contains results page, redirect to results
+                        window.location.href = '/results';
+                    } else {
+                        throw new Error('Unexpected response from server');
+                    }
+                }
             }
         } catch (err) {
             console.error("Form submission error:", err);
@@ -403,3 +462,106 @@ document.addEventListener('keydown', (e) => {
 });
 
 console.log("Border script loaded successfully");
+
+
+// Aspect ratio update logic for Bootswatch dropdown
+function updateAspectRatioOptions(orientation) {
+    const options = {
+        portrait: [
+            { value: 'Default', label: 'Default' },
+            { value: '4:5', label: '4:5' },
+            { value: '2:3', label: '2:3' },
+            { value: '3:4', label: '3:4' },
+            { value: '9:16', label: '9:16' },
+            { value: '8:10', label: '8:10' },
+            { value: '11:14', label: '11:14' },
+            { value: 'Custom', label: 'Custom...' }
+        ],
+        landscape: [
+            { value: 'Default', label: 'Default' },
+            { value: '5:4', label: '5:4' },
+            { value: '3:2', label: '3:2' },
+            { value: '4:3', label: '4:3' },
+            { value: '16:9', label: '16:9' },
+            { value: '10:8', label: '10:8' },
+            { value: '14:11', label: '14:11' },
+            { value: 'Custom', label: 'Custom...' }
+        ],
+        square: [
+            { value: 'Default', label: 'Default' },
+            { value: '1:1', label: '1:1' },
+            { value: 'Custom', label: 'Custom...' }
+        ]
+    };
+
+    // Get the dropdown menu element
+    const dropdownMenu = document.querySelector('.dropdown-menu');
+    if (!dropdownMenu) {
+        console.error('Dropdown menu not found');
+        return;
+    }
+
+    // Clear current dropdown items
+    dropdownMenu.innerHTML = '';
+
+    // Add new dropdown items based on orientation
+    options[orientation].forEach(option => {
+        if (option.value === 'Custom') {
+            // Add divider before Custom option
+            const divider = document.createElement('div');
+            divider.className = 'dropdown-divider';
+            dropdownMenu.appendChild(divider);
+        }
+        
+        const dropdownItem = document.createElement('a');
+        dropdownItem.className = 'dropdown-item';
+        dropdownItem.href = '#';
+        dropdownItem.setAttribute('data-value', option.value);
+        dropdownItem.textContent = option.label;
+        
+        // Add click event listener
+        dropdownItem.addEventListener('click', function(e) {
+            e.preventDefault();
+            const value = this.getAttribute('data-value');
+            const text = this.textContent;
+            
+            // Update selected button text
+            selectedAspectButton.textContent = text;
+            
+            // Update current aspect ratio
+            currentAspectRatio = value;
+            
+            // Show/hide custom input
+            if (value === 'Custom') {
+                customAspectInput.classList.remove('d-none');
+                customAspectInput.focus();
+            } else {
+                customAspectInput.classList.add('d-none');
+                customAspectInput.classList.remove('is-invalid', 'is-valid');
+            }
+            
+            console.log("Aspect ratio selected:", value);
+            
+            // Update preview if image is loaded
+            if (originalImage) {
+                drawPreview();
+            }
+        });
+        
+        dropdownMenu.appendChild(dropdownItem);
+    });
+
+    // Reset to default selection
+    selectedAspectButton.textContent = 'Default';
+    currentAspectRatio = 'Default';
+    if (customAspectInput) {
+        customAspectInput.classList.add('d-none');
+        customAspectInput.value = '';
+        customAspectInput.classList.remove('is-invalid', 'is-valid');
+    }
+
+    // Update the aspectDropdownItems variable for future reference
+    window.aspectDropdownItems = dropdownMenu.querySelectorAll('.dropdown-item[data-value]');
+
+    console.log(`Aspect ratio options updated for ${orientation} orientation.`);
+}

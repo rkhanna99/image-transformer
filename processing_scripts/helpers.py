@@ -777,6 +777,9 @@ def create_simple_border(image: Image, target_aspect_ratio: tuple[int, int], bor
     Returns:
         Image: A new PIL Image instance with the added border and adjusted size.
     """
+    # Ensure that the image is in the correct orientation
+    image = ImageOps.exif_transpose(image)
+
     img_width, img_height = image.size
     current_aspect_ratio = img_width / img_height
     target_aspect_ratio_value = target_aspect_ratio[0] / target_aspect_ratio[1]

@@ -35,6 +35,9 @@ def border_form():
 # White border route
 @app.route('/white-border', methods=['POST'])
 def white_border_endpoint():
+    # Store referrer for error redirection
+    session['last_referrer'] = request.referrer or url_for('border_form')
+
     if 'image' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -43,21 +46,45 @@ def white_border_endpoint():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    border_size = int(request.form.get('borderSlider', 0))
+    border_size = int(request.form.get('borderSize', 0))
     aspect_ratio = request.form.get('aspectRatio', 'Default')
 
-    # Do your border processing here...
-    processed_image = create_simple_border(Image.open(filepath), (1,1), border_size)
+    # Get the aspect ratio as a tuple
+    parsed_aspect_ratio = aspect_ratio.split(':')
+    if len(parsed_aspect_ratio) == 2:
+        try:
+            width, height = map(int, parsed_aspect_ratio)
+            aspect_ratio_tuple = (width, height)
+        except ValueError:
+            return redirect(session.get('last_referrer', url_for('border_form')))
 
-    processed_filename = f"bordered_{filename}"
-    processed_path = os.path.join(app.config['UPLOAD_FOLDER'], processed_filename)
-    processed_image.save(processed_path)
+    try:
+        # Do your border processing here...
+        processed_image = create_simple_border(Image.open(filepath), aspect_ratio_tuple, border_size)
 
-    return jsonify({"processed_image_url": url_for('static', filename=f'uploads/{processed_filename}')})
+        processed_image_filename = f"border_{filename}"
+        processed_image_path = os.path.join(app.config['UPLOAD_FOLDER'], processed_image_filename)
+        processed_image.save(processed_image_path, quality=100, optimize=True, progressive=True)
+
+        print(f"Processed image saved at: {processed_image_path}")
+
+        # Store the processed image path in session for use in the results page
+        session['processed_image_url'] = url_for('static', filename=f"uploads/{processed_image_filename}")
+        session['processed_image_filename'] = processed_image_filename
+
+        # Redirect to the results page
+        return redirect(url_for('results_page'))
+    except Exception as e:
+        print(f"Error processing image: {str(e)}")
+        # Redirect back to the form they came from on error
+        return redirect(session.get('last_referrer', url_for('border_form')))
 
 # Processing image endpoint
 @app.route('/process-image', methods=['POST'])
 def process_image_endpoint():
+    # Store referrer for error redirection
+    session['last_referrer'] = request.referrer or url_for('upload_form')
+
     # Check if a file is uploaded
     if 'image' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
@@ -145,7 +172,12 @@ def results_page():
 
     if not processed_image_url:
         # Redirect to the upload page if no image was processed
-        return redirect(url_for('upload_form'))
+        # Redirect to the appropriate form based on referrer or default to upload
+        referrer = request.referrer or ''
+        if 'border' in referrer:
+            return redirect(url_for('border_form'))
+        else:
+            return redirect(url_for('upload_form'))
 
     print(f"Processed image URL: {processed_image_url}")
 
