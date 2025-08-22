@@ -3,6 +3,7 @@ from werkzeug.utils import secure_filename
 from processing_scripts.image_transformer import process_image
 from processing_scripts.helpers import get_coordinates_from_address
 from processing_scripts.helpers import cleanup_directory
+from processing_scripts.helpers import create_simple_border
 import os, atexit
 from PIL import Image
 
@@ -26,6 +27,33 @@ def upload_form():
     Renders the upload form for users to upload images and input metadata.
     """
     return render_template('upload.html')
+
+@app.route('/border')
+def border_form():
+    return render_template('border.html')
+
+# White border route
+@app.route('/white-border', methods=['POST'])
+def white_border_endpoint():
+    if 'image' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files['image']
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+
+    border_size = int(request.form.get('borderSlider', 0))
+    aspect_ratio = request.form.get('aspectRatio', 'Default')
+
+    # Do your border processing here...
+    processed_image = create_simple_border(Image.open(filepath), (1,1), border_size)
+
+    processed_filename = f"bordered_{filename}"
+    processed_path = os.path.join(app.config['UPLOAD_FOLDER'], processed_filename)
+    processed_image.save(processed_path)
+
+    return jsonify({"processed_image_url": url_for('static', filename=f'uploads/{processed_filename}')})
 
 # Processing image endpoint
 @app.route('/process-image', methods=['POST'])
@@ -137,3 +165,4 @@ atexit.register(cleanup_directory, UPLOAD_FOLDER)
 
 if __name__ == '__main__':
     app.run(debug=True)
+

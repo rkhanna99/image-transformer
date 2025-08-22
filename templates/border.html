@@ -3,40 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Upload</title>
-    <!-- Add Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Link the local style sheet up -->
+    <title>Add White Border</title>
+    <!-- Bootstrap CSS (Currently using Lux) -->
+    <!-- <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"> -->
+    <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.7/dist/lux/bootstrap.rtl.min.css" rel="stylesheet">
+    <!-- Local stylesheet -->
     <link rel="stylesheet" href="../static/css/styles.css">
-
 </head>
 <body>
     <div class="container">
-        <h2>Add White Border</h2>
-        <div class="dropzone" id="dropzone">
-            <input type="file" id="imageUpload" accept="image/*" hidden>
-            <p id="dropzoneText">Drag & drop or click to upload</p>
+        <!-- Border Editing Section -->
+        <div id="borderSection" class="section">
+            <h1 class="text-center mb-4">Add White Border</h1>
+            <form id="borderForm" enctype="multipart/form-data">
+                <!-- Dropzone -->
+                <div id="container">
+                    <div class="dropzone" id="dropzone">
+                        <p id="dropzoneText">Drag and drop an image here or click to upload</p>
+                        <input type="file" id="imageInput" name="image" class="form-control d-none" accept="image/*">
+                        <canvas id="previewCanvas" class="d-none" style="max-width: 100%; margin-top: 20px;"></canvas>
+                        <img id="previewImage" class="d-none" alt="Preview" style="max-width: 100%; margin-top: 20px;">
+                    </div>
+                    <button id="resetButton" type="button" style="display: none;">Reset</button>
+                </div>
+
+                <!-- Border Slider -->
+                <div class="mb-3 mt-3">
+                    <label for="borderSlider" class="form-label">Border Size</label>
+                    <input type="range" id="borderSlider" min="0" max="50" step="1" value="0" class="form-range">
+                    <span id="borderValue">0%</span>
+                </div>
+
+                <!-- Aspect Ratio Selector - Bootswatch Lux Style -->
+                <div class="mb-3">
+                    <label for="aspectRatio" class="form-label">Aspect Ratio</label>
+                    <div class="aspect-ratio-container d-flex align-items-center gap-2">
+                        <!-- Button group with dropdown -->
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-primary" id="selectedAspectRatio">
+                                Default
+                            </button>
+                            <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" 
+                                    data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                                <span class="visually-hidden">Toggle Dropdown</span>
+                            </button>
+                            <div class="dropdown-menu">
+                                <a class="dropdown-item" href="#" data-value="Default">Default</a>
+                                <a class="dropdown-item" href="#" data-value="4:5">4:5</a>
+                                <a class="dropdown-item" href="#" data-value="3:2">3:2</a>
+                                <a class="dropdown-item" href="#" data-value="16:9">16:9</a>
+                                <a class="dropdown-item" href="#" data-value="1:1">1:1</a>
+                                <div class="dropdown-divider"></div>
+                                <a class="dropdown-item" href="#" data-value="Custom">Custom...</a>
+                            </div>
+                        </div>
+                        
+                        <!-- Hidden select element for form submission -->
+                        <select id="aspectRatio" name="aspectRatio" class="d-none">
+                            <option value="Default" selected>Default</option>
+                            <option value="4:5">4:5</option>
+                            <option value="3:2">3:2</option>
+                            <option value="16:9">16:9</option>
+                            <option value="1:1">1:1</option>
+                            <option value="Custom">Custom...</option>
+                        </select>
+                        
+                        <!-- Custom aspect ratio input -->
+                        <input 
+                            id="customAspectRatio" 
+                            type="text" 
+                            class="form-control d-none align-self-stretch" 
+                            placeholder="e.g., 21:9"
+                            style="height: auto;"
+                        />
+                    </div>
+                </div>
+
+                <!-- Save & Reset Buttons -->
+                <button type="submit" id="saveImage" class="btn btn-primary w-100">Save Image</button>
+                <button type="reset" id="resetAllBtn" class="btn btn-danger w-100">Reset All</button>
+            </form>
         </div>
 
-        <div id="controls" style="display:none; margin-top:20px;">
-            <label for="borderSlider">Border (%):</label>
-            <input type="range" id="borderSlider" min="0" max="50" step="1" value="0">
-            <span id="borderValue">0%</span>
-
-            <label>Aspect Ratio:</label>
-            <div class="aspect-ratio-buttons">
-                <button data-aspect="1:1">1:1</button>
-                <button data-aspect="2:3" class="active">2:3</button>
-                <button data-aspect="3:4">3:4</button>
-                <button data-aspect="4:5">4:5</button>
-                <button data-aspect="16:9">16:9</button>
-                <button data-aspect="Custom">Custom</button>
+        <!-- Loading Screen -->
+        <div id="loadingScreen" style="display: none; align-items: center; justify-content: center; height: 100vh;">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
             </div>
-
-            <canvas id="previewCanvas" style="max-width:100%; margin-top:20px;"></canvas>
-            
-            <button id="saveImage" class="btn-primary">Save Image</button>
         </div>
     </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Page-specific JS -->
+    <script src="../static/js/border.js"></script>
 </body>
 </html>

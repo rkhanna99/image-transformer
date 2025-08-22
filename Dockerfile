@@ -2,10 +2,10 @@
 FROM python:3.11-slim
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE = 1
-ENV PYTHONUNBUFFERED = 1
-ENV FLASK_APP = app.py
-ENV FLASK_RUN_HOST = 0.0.0.0
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=app.py
+ENV FLASK_RUN_HOST=0.0.0.0
 
 # Set work directory
 WORKDIR /app
@@ -16,7 +16,7 @@ RUN pip install --upgrade pip \
 	&& pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
-COPY . /app/
+# COPY . /app/
 
 # Ensure upload and font folders exist
 RUN mkdir -p static/uploads fonts
@@ -29,4 +29,4 @@ ENV FLASK_APP=app.py
 ENV FLASK_RUN_HOST=0.0.0.0
 
 # Run the application
-CMD ["flask", "run"]
+CMD ["flask", "run", "--host=0.0.0.0", "--port=5000"]
