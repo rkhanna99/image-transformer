@@ -56,7 +56,8 @@ function getTargetAspectRatioTuple() {
     if (!w || !h) return null;
     return [w, h];
 }
-// Draws the preview with current border settings
+
+// Draws the preview with current border settings (matches Python logic exactly)
 function drawPreview() {
     console.log("drawPreview called with border:", borderSlider?.value, "aspect:", currentAspectRatio);
     if (!originalImage || !ctx || !previewCanvas) {
@@ -69,75 +70,83 @@ function drawPreview() {
     const imgH = originalImage.naturalHeight;
     
     // Parse target aspect ratio
-    let targetAspectRatioValue = null;
+    let targetAspectRatioTuple = null;
     if (currentAspectRatio && currentAspectRatio !== 'Default' && currentAspectRatio !== 'Custom') {
         const [w, h] = currentAspectRatio.split(':').map(Number);
         if (w && h) {
-            targetAspectRatioValue = w / h;
+            targetAspectRatioTuple = [w, h];
         }
     }
     
-    // Calculate scaling for preview
+    // If no target aspect ratio or default, use original image aspect ratio
+    let targetAspectRatioValue = imgW / imgH;
+    if (targetAspectRatioTuple) {
+        targetAspectRatioValue = targetAspectRatioTuple[0] / targetAspectRatioTuple[1];
+    }
+    
+    // Calculate scaling for preview (applied after all calculations)
     const scale = Math.min(1, MAX_PREVIEW / Math.max(imgW, imgH));
-    const scaledW = Math.round(imgW * scale);
-    const scaledH = Math.round(imgH * scale);
     
-    // Step 1: Add uniform border (like Python's first step)
-    const uniformBorderSize = Math.round(Math.min(scaledW, scaledH) * (borderSize / 100)) / 2;
-    let borderedWidth = scaledW + (uniformBorderSize * 2);
-    let borderedHeight = scaledH + (uniformBorderSize * 2);
+    // Step 1: Calculate uniform border size (matches Python exactly)
+    const uniformBorderSize = Math.floor(Math.min(imgW, imgH) * (borderSize / 100)) / 2;
+    let borderedWidth = imgW + (uniformBorderSize * 2);
+    let borderedHeight = imgH + (uniformBorderSize * 2);
     
-    // Step 2: Adjust for aspect ratio if needed (like Python's second step)
+    // Step 2: Adjust for aspect ratio if needed (matches Python exactly)
     let finalWidth = borderedWidth;
     let finalHeight = borderedHeight;
     let aspectPadding = { left: 0, top: 0, right: 0, bottom: 0 };
     
-    if (targetAspectRatioValue) {
+    if (targetAspectRatioTuple) {
         const currentAspect = borderedWidth / borderedHeight;
         
         if (currentAspect > targetAspectRatioValue) {
             // Too wide → pad top/bottom equally
             const newHeight = Math.round(borderedWidth / targetAspectRatioValue);
             const paddingNeeded = newHeight - borderedHeight;
-            aspectPadding.top = Math.round(paddingNeeded / 2);
+            aspectPadding.top = Math.floor(paddingNeeded / 2);
             aspectPadding.bottom = paddingNeeded - aspectPadding.top;
             finalHeight = newHeight;
         } else if (currentAspect < targetAspectRatioValue) {
             // Too tall → pad left/right equally
             const newWidth = Math.round(borderedHeight * targetAspectRatioValue);
             const paddingNeeded = newWidth - borderedWidth;
-            aspectPadding.left = Math.round(paddingNeeded / 2);
+            aspectPadding.left = Math.floor(paddingNeeded / 2);
             aspectPadding.right = paddingNeeded - aspectPadding.left;
             finalWidth = newWidth;
         }
-        // If equal, no padding needed
     }
     
-    // Set canvas size to final dimensions
-    previewCanvas.width = finalWidth;
-    previewCanvas.height = finalHeight;
+    // Apply scaling to final dimensions
+    const scaledFinalWidth = Math.round(finalWidth * scale);
+    const scaledFinalHeight = Math.round(finalHeight * scale);
+    
+    // Set canvas size to final scaled dimensions
+    previewCanvas.width = scaledFinalWidth;
+    previewCanvas.height = scaledFinalHeight;
     
     // Clear canvas with white background
     ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, finalWidth, finalHeight);
+    ctx.fillRect(0, 0, scaledFinalWidth, scaledFinalHeight);
     
-    // Calculate image position with both border and aspect ratio padding
-    const imageX = uniformBorderSize + aspectPadding.left;
-    const imageY = uniformBorderSize + aspectPadding.top;
-    const imageWidth = scaledW;
-    const imageHeight = scaledH;
+    // Calculate scaled positions and dimensions
+    const scaledImageX = Math.round((uniformBorderSize + aspectPadding.left) * scale);
+    const scaledImageY = Math.round((uniformBorderSize + aspectPadding.top) * scale);
+    const scaledImageWidth = Math.round(imgW * scale);
+    const scaledImageHeight = Math.round(imgH * scale);
     
-    // Draw the image
-    ctx.drawImage(originalImage, imageX, imageY, imageWidth, imageHeight);
+    // Draw the scaled image
+    ctx.drawImage(originalImage, scaledImageX, scaledImageY, scaledImageWidth, scaledImageHeight);
     
     console.log("Preview drawn:", {
         originalSize: `${imgW}x${imgH}`,
-        scaledSize: `${scaledW}x${scaledH}`,
         uniformBorder: uniformBorderSize,
         borderedSize: `${borderedWidth}x${borderedHeight}`,
         aspectPadding: aspectPadding,
         finalSize: `${finalWidth}x${finalHeight}`,
-        imagePosition: `${imageX},${imageY}`,
+        scaledFinalSize: `${scaledFinalWidth}x${scaledFinalHeight}`,
+        imagePosition: `${scaledImageX},${scaledImageY}`,
+        imageSize: `${scaledImageWidth}x${scaledImageHeight}`,
         targetAspectRatio: targetAspectRatioValue
     });
 }
@@ -176,9 +185,18 @@ function handleSelectedFile(file) {
                 updateAspectRatioOptions('square');
             }
             
-            // Show canvas and hide dropzone text
+            // Show canvas container and hide dropzone text
+            const canvasContainer = document.querySelector('.canvas-container');
+            if (canvasContainer) {
+                canvasContainer.classList.add('active');
+            }
             previewCanvas.classList.remove('d-none');
             dropzoneText.style.display = 'none';
+            
+            // Add class to indicate dropzone has an image
+            if (dropzone) {
+                dropzone.classList.add('has-image');
+            }
             
             // Show controls and reset button
             if (controls) controls.style.display = 'block';
@@ -248,11 +266,13 @@ document.addEventListener('DOMContentLoaded', function() {
     setupAspectRatioDropdown();
 });
 
-// Click on dropzone -> open file picker
+// Click on dropzone -> open file picker (only when no image)
 if (dropzone) {
     dropzone.addEventListener('click', (e) => {
-        // Prevent triggering if clicking on child elements (except the file input)
-        if (e.target === dropzone || e.target === dropzoneText) {
+        // Only handle clicks if dropzone doesn't have an image
+        // and if clicking on dropzone itself or the text
+        if (!dropzone.classList.contains('has-image') && 
+            (e.target === dropzone || e.target === dropzoneText)) {
             console.log('✅ Dropzone clicked, opening file picker');
             if (imageInput) {
                 imageInput.click();
@@ -260,6 +280,7 @@ if (dropzone) {
         }
     });
 }
+
 
 // File input change
 if (imageInput) {
@@ -270,42 +291,42 @@ if (imageInput) {
     });
 }
 
-// Drag over / leave / drop
+// Drag over / leave / drop - only when dropzone doesn't have image
 if (dropzone) {
-    dropzone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropzone.classList.add('dragover');
-        dropzone.style.backgroundColor = '#f8f9fa';
-    });
-    
-    dropzone.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropzone.classList.remove('dragover');
-        dropzone.style.backgroundColor = '';
-    });
-
-    dropzone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropzone.classList.remove('dragover');
-        dropzone.style.backgroundColor = '';
-        
-        const files = e.dataTransfer.files;
-        console.log("Files dropped:", files);
-        
-        if (files && files.length > 0) {
-            const file = files[0];
-            if (imageInput) {
-                // Create a new FileList-like object
-                const dt = new DataTransfer();
-                dt.items.add(file);
-                imageInput.files = dt.files;
+    const handleDragEvents = (e) => {
+        // Only handle drag events if dropzone doesn't have an image
+        if (!dropzone.classList.contains('has-image')) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (e.type === 'dragover') {
+                dropzone.classList.add('dragover');
+                dropzone.style.backgroundColor = '#f8f9fa';
+            } else if (e.type === 'dragleave' || e.type === 'drop') {
+                dropzone.classList.remove('dragover');
+                dropzone.style.backgroundColor = '';
             }
-            handleSelectedFile(file);
+            
+            if (e.type === 'drop') {
+                const files = e.dataTransfer.files;
+                console.log("Files dropped:", files);
+                
+                if (files && files.length > 0) {
+                    const file = files[0];
+                    if (imageInput) {
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        imageInput.files = dt.files;
+                    }
+                    handleSelectedFile(file);
+                }
+            }
         }
-    });
+    };
+
+    dropzone.addEventListener('dragover', handleDragEvents);
+    dropzone.addEventListener('dragleave', handleDragEvents);
+    dropzone.addEventListener('drop', handleDragEvents);
 }
 
 // ---- Live controls ----
@@ -343,10 +364,22 @@ if (aspectButtons.length > 0) {
 if (resetButton) {
     resetButton.addEventListener('click', function() {
         console.log("Reset button clicked");
+        
+        // Hide canvas container
+        const canvasContainer = document.querySelector('.canvas-container');
+        if (canvasContainer) {
+            canvasContainer.classList.remove('active');
+        }
         previewCanvas.classList.add('d-none');
         previewImage.classList.add('d-none');
+        
+        // Restore dropzone functionality and text
         dropzoneText.style.display = 'block';
         dropzoneText.textContent = "Drag and drop an image here or click to upload";
+        if (dropzone) {
+            dropzone.classList.remove('has-image');
+        }
+        
         if (imageInput) imageInput.value = '';
         resetButton.style.display = 'none';
         if (controls) controls.style.display = 'none';

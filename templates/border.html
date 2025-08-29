@@ -21,9 +21,14 @@
                     <div class="dropzone" id="dropzone">
                         <p id="dropzoneText">Drag and drop an image here or click to upload</p>
                         <input type="file" id="imageInput" name="image" class="form-control d-none" accept="image/*">
-                        <canvas id="previewCanvas" class="d-none" style="max-width: 100%; margin-top: 20px;"></canvas>
-                        <img id="previewImage" class="d-none" alt="Preview" style="max-width: 100%; margin-top: 20px;">
+                        
+                        <!-- Canvas container (initially hidden) -->
+                        <div class="canvas-container">
+                            <canvas id="previewCanvas" class="d-none"></canvas>
+                            <img id="previewImage" class="d-none" alt="Preview">
+                        </div>
                     </div>
+
                     <button id="resetButton" type="button" style="display: none;">Reset</button>
                 </div>
 

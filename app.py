@@ -5,7 +5,7 @@ from processing_scripts.helpers import get_coordinates_from_address
 from processing_scripts.helpers import cleanup_directory
 from processing_scripts.helpers import create_simple_border
 import os, atexit
-from PIL import Image
+from PIL import Image, ImageOps
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = "your_secret_key"  # Needed for session management
@@ -49,14 +49,25 @@ def white_border_endpoint():
     border_size = int(request.form.get('borderSize', 0))
     aspect_ratio = request.form.get('aspectRatio', 'Default')
 
-    # Get the aspect ratio as a tuple
-    parsed_aspect_ratio = aspect_ratio.split(':')
-    if len(parsed_aspect_ratio) == 2:
-        try:
-            width, height = map(int, parsed_aspect_ratio)
+    # Check if the aspect ratio is 'Default'
+    if aspect_ratio == 'Default':
+        # Open the image to determine its aspect ratio
+        with Image.open(filepath) as img:
+            # Ensure the image is in its correct orientation after opening it
+            img = ImageOps.exif_transpose(img)
+            width, height = img.size
             aspect_ratio_tuple = (width, height)
-        except ValueError:
-            return redirect(session.get('last_referrer', url_for('border_form')))
+    else:
+        # Get the aspect ratio as a tuple
+        parsed_aspect_ratio = aspect_ratio.split(':')
+        if len(parsed_aspect_ratio) == 2:
+            try:
+                width, height = map(int, parsed_aspect_ratio)
+                aspect_ratio_tuple = (width, height)
+            except ValueError:
+                return redirect(session.get('last_referrer', url_for('border_form')))
+
+    print(f"Aspect Ratio Tuple: {aspect_ratio_tuple}, Border Size: {border_size}")
 
     try:
         # Do your border processing here...
@@ -123,7 +134,7 @@ def process_image_endpoint():
             return jsonify({"error": "Address or Latitude and Longitude must be provided"}), 400
 
     # Convert aspect ratio if custom
-    print_aspect_ratio = None
+    print_aspect_ratio = aspect_ratio
     if aspect_ratio == "Custom":
         custom_aspect = request.form.get('customAspectRatio')
         if custom_aspect:
@@ -132,6 +143,16 @@ def process_image_endpoint():
                 print_aspect_ratio = (width, height)
             except ValueError:
                 return jsonify({"error": "Invalid custom aspect ratio"}), 400
+    elif aspect_ratio == "Default":
+        # Open the image to determine its aspect ratio
+        with Image.open(filepath) as img:
+            # Ensure the image is in its correct orientation after opening it
+            img = ImageOps.exif_transpose(img)
+            width, height = img.size
+            print_aspect_ratio = (width, height)
+
+    # Log the final aspect ratio being used
+    print(f"Aspect Ratio for Print: {print_aspect_ratio}")        
 
     # Process the image using the process_image function
     try:
