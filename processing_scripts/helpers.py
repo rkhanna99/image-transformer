@@ -632,13 +632,17 @@ def setup_print_padding(original_image: Image, stacked_image: Image, base_pad_va
 
     # Format the target aspect ratio if present:
     if desired_aspect_ratio is not None:
-        aspect_ratio_str = f"{desired_aspect_ratio[0]}:{desired_aspect_ratio[1]}"
-        aspect_ratio_adjustment_obj = next((option for option in aspect_ratio_adjustment_list if option['aspect_ratio'] == aspect_ratio_str), None)
+        if type(desired_aspect_ratio) is tuple and len(desired_aspect_ratio) == 2:
+            aspect_ratio_str = f"{desired_aspect_ratio[0]}:{desired_aspect_ratio[1]}"
+        else:
+            aspect_ratio_str = str(desired_aspect_ratio)
     else:
         # Set a default processing if no desired aspect ratio (5:4 for Landscape and 2:3 for Portrait)
         aspect_ratio = (5, 4) if original_image.width > original_image.height else (2, 3)
         aspect_ratio_str = f"{aspect_ratio[0]}:{aspect_ratio[1]}"
-        aspect_ratio_adjustment_obj = next((option for option in aspect_ratio_adjustment_list if option['aspect_ratio'] == aspect_ratio_str), None)
+        
+    # Get the aspect ratio adjustment object    
+    aspect_ratio_adjustment_obj = next((item for item in aspect_ratio_adjustment_list if item["aspect_ratio"] == aspect_ratio_str), None)
 
     # Set the padding values
     horizontal_padding = aspect_ratio_adjustment_obj["width_padding"] // 2
