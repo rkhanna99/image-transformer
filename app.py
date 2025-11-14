@@ -4,7 +4,7 @@ from processing_scripts.image_transformer import process_image
 from processing_scripts.helpers import get_coordinates_from_address
 from processing_scripts.helpers import cleanup_directory
 from processing_scripts.helpers import create_simple_border
-import os, atexit
+import os, atexit, math
 from PIL import Image, ImageOps
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -38,6 +38,7 @@ def white_border_endpoint():
     # Store referrer for error redirection
     session['last_referrer'] = request.referrer or url_for('border_form')
 
+    # Need to tweak this code to handle multiple images
     if 'image' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -149,6 +150,11 @@ def process_image_endpoint():
             # Ensure the image is in its correct orientation after opening it
             img = ImageOps.exif_transpose(img)
             width, height = img.size
+
+            # Need to reduce width and height to their simplest form
+            gcd = math.gcd(width, height)
+            width //= gcd
+            height //= gcd
             print_aspect_ratio = (width, height)
 
     # Log the final aspect ratio being used

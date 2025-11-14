@@ -35,6 +35,14 @@ const MAX_PREVIEW = 800; // Reduced for better performance
 // Store current aspect ratio
 let currentAspectRatio = 'Default';
 
+// Carousel state for multiple images
+let fileList = []; // Array<File>
+let currentIndex = 0;
+const carouselControls = document.getElementById('carouselControls');
+const prevImageBtn = document.getElementById('prevImage');
+const nextImageBtn = document.getElementById('nextImage');
+const carouselIndex = document.getElementById('carouselIndex');
+
 // ---- Helpers ----
 function parseAspect(str) {
     if (!str || str === 'Default' || str === 'Custom') return null;
@@ -151,6 +159,15 @@ function drawPreview() {
     });
 }
 
+// If canvas drawing isn't available, show the img element as a fallback
+function showFallbackImage(imgSrc) {
+    if (previewCanvas) previewCanvas.classList.add('d-none');
+    if (previewImage) {
+        previewImage.src = imgSrc;
+        previewImage.classList.remove('d-none');
+    }
+}
+
 // ---- File selection + DnD ----
 function handleSelectedFile(file) {
     console.log("handleSelectedFile called with:", file);
@@ -158,25 +175,87 @@ function handleSelectedFile(file) {
         console.warn("No file provided to handleSelectedFile");
         return;
     }
-    
-    if (!file.type.match('image.*')) {
+
+    // If a FileList or array was passed, handle multiple files first
+    if (file instanceof FileList || Array.isArray(file)) {
+        console.log("Adding multiple files:", Array.from(file).map(f => f.name));
+        const addFiles = (files) => {
+            const newFiles = Array.from(files);
+            // Append new files to list
+            fileList = fileList.concat(newFiles);
+
+            // Update input.files so that form behavior remains compatible
+            if (imageInput) {
+                const dt = new DataTransfer();
+                fileList.forEach(f => dt.items.add(f));
+                imageInput.files = dt.files;
+            }
+
+            // Show first/newly added image if nothing is displayed
+            if (!originalImage) {
+                showFileAtIndex(0);
+            } else {
+                // Update carousel UI
+                updateCarouselUI();
+            }
+        };
+
+        addFiles(file);
+        return;
+    }
+
+    // Single File handling - robustly check MIME type
+    const mimeType = (file && file.type) ? String(file.type) : '';
+    if (!mimeType.match(/^image\//)) {
         alert('Please select an image file (JPEG, PNG, etc.)');
         return;
     }
 
+    // Accept either a single File or a FileList/Array of Files
+    const addFiles = (files) => {
+        const newFiles = Array.from(files);
+        // Append new files to list
+        fileList = fileList.concat(newFiles);
+
+        // Update input.files so that form behavior remains compatible
+        if (imageInput) {
+            const dt = new DataTransfer();
+            fileList.forEach(f => dt.items.add(f));
+            imageInput.files = dt.files;
+        }
+
+        // Show first/newly added image if nothing is displayed
+        if (!originalImage) {
+            showFileAtIndex(0);
+        } else {
+            // Update carousel UI
+            updateCarouselUI();
+        }
+    };
+    // Single file provided
+    addFiles([file]);
+}
+
+// Show file at given index in fileList
+function showFileAtIndex(index) {
+    if (!fileList || fileList.length === 0) return;
+    index = Math.max(0, Math.min(index, fileList.length - 1));
+    currentIndex = index;
+
+    const file = fileList[currentIndex];
     const reader = new FileReader();
     reader.onload = e => {
-        console.log("FileReader loaded");
         const img = new Image();
         img.onload = () => {
-            console.log("Image loaded into memory");
             originalImage = img;
 
-            // Update the aspect ratio dropdown options based on the orientation of the image
+            // If currentAspectRatio is Default, keep it so preview uses image's native ratio
+            // Otherwise leave user-set ratio intact (applies to all images)
+            if (!currentAspectRatio) currentAspectRatio = 'Default';
+
+            // Update aspect options based on orientation of this image
             const width = img.width;
             const height = img.height;
-            console.log(`Image dimensions: ${width}x${height}`);
-
             if (width > height) {
                 updateAspectRatioOptions('landscape');
             } else if (width < height) {
@@ -184,40 +263,47 @@ function handleSelectedFile(file) {
             } else {
                 updateAspectRatioOptions('square');
             }
-            
-            // Show canvas container and hide dropzone text
+
+            // Show canvas and controls
             const canvasContainer = document.querySelector('.canvas-container');
-            if (canvasContainer) {
-                canvasContainer.classList.add('active');
-            }
-            previewCanvas.classList.remove('d-none');
-            dropzoneText.style.display = 'none';
-            
-            // Add class to indicate dropzone has an image
-            if (dropzone) {
-                dropzone.classList.add('has-image');
-            }
-            
-            // Show controls and reset button
+            if (canvasContainer) canvasContainer.classList.add('active');
+            if (previewCanvas) previewCanvas.classList.remove('d-none');
+            if (dropzoneText) dropzoneText.style.display = 'none';
+            if (dropzone) dropzone.classList.add('has-image');
             if (controls) controls.style.display = 'block';
             if (resetButton) resetButton.style.display = 'block';
-            
+
             dropzoneText.textContent = file.name;
-            
-            // Initial draw
-            drawPreview();
+
+            updateCarouselUI();
+            // Try to draw on canvas; if ctx is missing, fall back to <img>
+            if (ctx) {
+                // Ensure canvas is visible and image element hidden
+                if (previewCanvas) previewCanvas.classList.remove('d-none');
+                if (previewImage) previewImage.classList.add('d-none');
+                drawPreview();
+            } else {
+                console.warn('Canvas context not available; falling back to raw <img> preview');
+                showFallbackImage(img.src);
+            }
         };
         img.onerror = () => {
-            console.error("Failed to load image");
             alert('Failed to load the image. Please try another file.');
         };
         img.src = e.target.result;
     };
-    reader.onerror = () => {
-        console.error("FileReader error");
-        alert('Error reading file. Please try again.');
-    };
     reader.readAsDataURL(file);
+}
+
+function updateCarouselUI() {
+    if (!fileList || fileList.length <= 1) {
+        if (carouselControls) carouselControls.classList.add('d-none');
+    } else {
+        if (carouselControls) carouselControls.classList.remove('d-none');
+    }
+    if (carouselIndex) {
+        carouselIndex.textContent = `${currentIndex + 1} / ${fileList.length}`;
+    }
 }
 
 // ---- Aspect Ratio Dropdown Functionality ----
@@ -266,60 +352,81 @@ document.addEventListener('DOMContentLoaded', function() {
     setupAspectRatioDropdown();
 });
 
-// Click on dropzone -> open file picker (only when no image)
+// Carousel prev/next buttons
+if (prevImageBtn) {
+    prevImageBtn.addEventListener('click', (e) => {
+        // Prevent the click from bubbling to the dropzone (which opens the file picker)
+        e.stopPropagation();
+        e.preventDefault();
+        if (!fileList || fileList.length === 0) return;
+        const nextIndex = (currentIndex - 1 + fileList.length) % fileList.length;
+        showFileAtIndex(nextIndex);
+    });
+}
+if (nextImageBtn) {
+    nextImageBtn.addEventListener('click', (e) => {
+        // Prevent the click from bubbling to the dropzone (which opens the file picker)
+        e.stopPropagation();
+        e.preventDefault();
+        if (!fileList || fileList.length === 0) return;
+        const nextIndex = (currentIndex + 1) % fileList.length;
+        showFileAtIndex(nextIndex);
+    });
+}
+
+// Prevent clicks inside the carousel controls container from opening the file picker
+if (carouselControls) {
+    carouselControls.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+}
+
+// Click on dropzone -> open file picker (always allow adding files)
 if (dropzone) {
     dropzone.addEventListener('click', (e) => {
-        // Only handle clicks if dropzone doesn't have an image
-        // and if clicking on dropzone itself or the text
-        if (!dropzone.classList.contains('has-image') && 
-            (e.target === dropzone || e.target === dropzoneText)) {
-            console.log('✅ Dropzone clicked, opening file picker');
-            if (imageInput) {
-                imageInput.click();
-            }
+        // Ignore clicks that originate from carousel controls so they don't open file picker
+        if (e.target && (e.target.closest && (e.target.closest('#carouselControls') || e.target.closest('.carousel-controls') || e.target.closest('#prevImage') || e.target.closest('#nextImage')))) {
+            console.log('Click inside carousel controls — ignoring dropzone open');
+            return;
         }
+        console.log('Dropzone clicked, opening file picker');
+        if (imageInput) imageInput.click();
     });
 }
 
 
 // File input change
+// File input change - support multiple files
 if (imageInput) {
     imageInput.addEventListener('change', (e) => {
-        console.log("Image input change event");
-        const file = e.target.files && e.target.files[0];
-        handleSelectedFile(file);
+        console.log("Image input change event (multiple support)");
+        const files = e.target.files;
+        if (files && files.length > 0) {
+            handleSelectedFile(files);
+        }
     });
 }
 
-// Drag over / leave / drop - only when dropzone doesn't have image
+// Drag over / leave / drop - always allow adding files
 if (dropzone) {
     const handleDragEvents = (e) => {
-        // Only handle drag events if dropzone doesn't have an image
-        if (!dropzone.classList.contains('has-image')) {
-            e.preventDefault();
-            e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (e.type === 'dragover') {
+            dropzone.classList.add('dragover');
+            dropzone.style.backgroundColor = '#f8f9fa';
+        } else if (e.type === 'dragleave' || e.type === 'drop') {
+            dropzone.classList.remove('dragover');
+            dropzone.style.backgroundColor = '';
+        }
+        
+        if (e.type === 'drop') {
+            const files = e.dataTransfer.files;
+            console.log("Files dropped:", files);
             
-            if (e.type === 'dragover') {
-                dropzone.classList.add('dragover');
-                dropzone.style.backgroundColor = '#f8f9fa';
-            } else if (e.type === 'dragleave' || e.type === 'drop') {
-                dropzone.classList.remove('dragover');
-                dropzone.style.backgroundColor = '';
-            }
-            
-            if (e.type === 'drop') {
-                const files = e.dataTransfer.files;
-                console.log("Files dropped:", files);
-                
-                if (files && files.length > 0) {
-                    const file = files[0];
-                    if (imageInput) {
-                        const dt = new DataTransfer();
-                        dt.items.add(file);
-                        imageInput.files = dt.files;
-                    }
-                    handleSelectedFile(file);
-                }
+            if (files && files.length > 0) {
+                handleSelectedFile(files);
             }
         }
     };
@@ -384,6 +491,11 @@ if (resetButton) {
         resetButton.style.display = 'none';
         if (controls) controls.style.display = 'none';
         originalImage = null;
+        // Clear file list and carousel UI
+        fileList = [];
+        currentIndex = 0;
+        if (carouselControls) carouselControls.classList.add('d-none');
+        if (carouselIndex) carouselIndex.textContent = '0 / 0';
         
         // Reset border slider
         if (borderSlider) {
@@ -420,17 +532,29 @@ if (borderForm) {
         }
 
         const formData = new FormData();
-        formData.append('image', imageInput.files[0]);
+        // Append all images (fileList) so backend can handle multiple images
+        if (!fileList || fileList.length === 0) {
+            alert('Please select at least one image');
+            return;
+        }
+        fileList.forEach((f, idx) => {
+            // use 'images' as the field name for multiple files
+            formData.append('images', f, f.name);
+        });
+
         formData.append('borderSize', borderSlider ? borderSlider.value : 0);
-        
-        // Add aspect ratio to form data
+
+        // Add aspect ratio to form data (shared for all images)
         let aspectValue = currentAspectRatio;
-        // If custom input is visible and has valid value, use that instead
-        if (currentAspectRatio === 'Custom' && customAspectInput && 
-            customAspectInput.value && !customAspectInput.classList.contains('is-invalid')) {
+        if (aspectValue === 'Custom' && customAspectInput && customAspectInput.value && !customAspectInput.classList.contains('is-invalid')) {
             aspectValue = customAspectInput.value;
         }
         formData.append('aspectRatio', aspectValue);
+
+        // Log the form data being sent
+        for (let pair of formData.entries()) {
+            console.log(pair[0]+ ': ' + pair[1]);
+        }
 
         try {
             // Show loading
@@ -584,13 +708,37 @@ function updateAspectRatioOptions(orientation) {
         dropdownMenu.appendChild(dropdownItem);
     });
 
-    // Reset to default selection
-    selectedAspectButton.textContent = 'Default';
-    currentAspectRatio = 'Default';
-    if (customAspectInput) {
-        customAspectInput.classList.add('d-none');
-        customAspectInput.value = '';
-        customAspectInput.classList.remove('is-invalid', 'is-valid');
+    // Preserve user's chosen aspect ratio when updating the options.
+    // If currentAspectRatio matches one of the available options, set the button text accordingly.
+    let found = false;
+    options[orientation].forEach(option => {
+        if (option.value === currentAspectRatio) {
+            selectedAspectButton.textContent = option.label;
+            found = true;
+        }
+    });
+    // If not found and we have a custom value, show it in the custom input
+    if (!found && currentAspectRatio && currentAspectRatio !== 'Default') {
+        selectedAspectButton.textContent = currentAspectRatio;
+        if (customAspectInput) {
+            customAspectInput.value = currentAspectRatio;
+            customAspectInput.classList.remove('d-none');
+            customAspectInput.classList.add('is-valid');
+        }
+    } else if (!currentAspectRatio || currentAspectRatio === 'Default') {
+        selectedAspectButton.textContent = 'Default';
+        currentAspectRatio = 'Default';
+        if (customAspectInput) {
+            customAspectInput.classList.add('d-none');
+            customAspectInput.value = '';
+            customAspectInput.classList.remove('is-invalid', 'is-valid');
+        }
+    } else {
+        if (customAspectInput) {
+            customAspectInput.classList.add('d-none');
+            customAspectInput.value = '';
+            customAspectInput.classList.remove('is-invalid', 'is-valid');
+        }
     }
 
     // Update the aspectDropdownItems variable for future reference

@@ -20,12 +20,19 @@
                 <div id="container">
                     <div class="dropzone" id="dropzone">
                         <p id="dropzoneText">Drag and drop an image here or click to upload</p>
-                        <input type="file" id="imageInput" name="image" class="form-control d-none" accept="image/*">
+                        <input type="file" id="imageInput" name="image" class="form-control d-none" accept="image/*" multiple>
                         
                         <!-- Canvas container (initially hidden) -->
                         <div class="canvas-container">
                             <canvas id="previewCanvas" class="d-none"></canvas>
                             <img id="previewImage" class="d-none" alt="Preview">
+                        </div>
+
+                        <!-- Carousel controls for multiple images -->
+                        <div class="carousel-controls mt-2 d-none" id="carouselControls">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="prevImage">Prev</button>
+                            <span id="carouselIndex" class="mx-2">0 / 0</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="nextImage">Next</button>
                         </div>
                     </div>
 
