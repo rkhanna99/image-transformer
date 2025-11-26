@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Image Processing Home</title>
+
+    <!-- Bootswatch Lux Theme-->
+    <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.7/dist/lux/bootstrap.rtl.min.css" rel="stylesheet">
+
+    <!-- Bootstrap Icons-->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+
+    <style>
+        /* Page transition states */
+        body {
+            opacity: 0;
+            transition: opacity 0.45s ease-in-out;
+        }
+        body.page-enter {
+            opacity: 1;
+        }
+        body.page-exit {
+            opacity: 0;
+        }
+
+        /* Card hover animations */
+        .tool-card {
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+            cursor: pointer;
+        }
+
+        .tool-card:hover {
+            transform: translateY(-6px) scale(1.01);
+            box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.18);
+        }
+
+        .tool-card .btn {
+            transition: transform 0.2s ease;
+        }
+
+        .tool-card:hover .btn {
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <a class="navbar-brand" href="/">
+            <i class="bi bi-images"></i> Image Processing Toolkit
+        </a>
+    </nav>
+
+    <div class="container text-center mt-5">
+
+        <h1 class="mb-3">Welcome to the Image Processing Toolkit</h1>
+        <p class="lead mb-5">
+            Choose one of the tools below to begin.
+        </p>
+
+        <div class="row justify-content-center">
+
+            <!-- Metadata Overlay Tool Card -->
+            <div class="col-md-5 mb-4">
+                <div class="card shadow border-0 h-100 tool-card"
+                     data-nav-target="/metadata">
+                    <div class="card-body d-flex flex-column">
+                        <h3 class="card-title mb-3">
+                            <i class="bi bi-card-image me-2"></i>Metadata Overlay Generator
+                        </h3>
+                        <p class="card-text flex-grow-1">
+                            Upload a single image and generate a clean metadata overlay
+                            (date, camera settings, GPS, color palette etc.) styled for sharing or printing.
+                        </p>
+                        <a href="/metadata"
+                           class="btn btn-primary btn-lg mt-3 w-100 route-link">
+                            Open Metadata Overlay Tool
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Border Generator Tool Card -->
+            <div class="col-md-5 mb-4">
+                <div class="card shadow border-0 h-100 tool-card"
+                     data-nav-target="/border">
+                    <div class="card-body d-flex flex-column">
+                        <h3 class="card-title mb-3">
+                            <i class="bi bi-bounding-box-circles me-2"></i>White Border Creator
+                        </h3>
+                        <p class="card-text flex-grow-1">
+                            Upload multiple images, adjust a border slider, and export them
+                            with a crisp white border and your chosen aspect ratio.
+                        </p>
+                        <a href="/border"
+                           class="btn btn-success btn-lg mt-3 w-100 route-link">
+                            Open Border Generator
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // Fade in on load
+        document.addEventListener('DOMContentLoaded', function () {
+            document.body.classList.add('page-enter');
+
+            // Intercept clicks on links we want to animate
+            const routeLinks = document.querySelectorAll('.route-link');
+            const cardLinks = document.querySelectorAll('.tool-card');
+
+            function handleNavigate(event, targetUrl) {
+                if (!targetUrl) return;
+
+                event.preventDefault();
+                // start fade-out transition
+                document.body.classList.add('page-exit');
+                document.body.classList.remove('page-enter');
+
+                // After the transition, navigate
+                setTimeout(function () {
+                    window.location.href = targetUrl;
+                }, 450); // match CSS transition duration
+            }
+
+            routeLinks.forEach(link => {
+                link.addEventListener('click', function (event) {
+                    handleNavigate(event, this.getAttribute('href'));
+                });
+            });
+
+            // Make entire card clickable with same animation
+            cardLinks.forEach(card => {
+                card.addEventListener('click', function (event) {
+                    const targetUrl = this.getAttribute('data-nav-target');
+                    handleNavigate(event, targetUrl);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

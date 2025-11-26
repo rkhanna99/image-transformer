@@ -7,6 +7,9 @@
     <!-- Add Bootstrap CSS -->
     <!-- <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"> -->
     <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.7/dist/lux/bootstrap.rtl.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons-->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    
     <!-- Link your existing styles -->
     <link rel="stylesheet" href="../static/css/styles.css">
     <style>
@@ -39,17 +42,44 @@
         .btn {
             margin-top: 15px;
         }
+
+        #prevResult, #nextResult {
+            margin: 0 10px;
+            border: 1px solid #ced4da;
+            border-radius: 10px;
+        }
+        
     </style>
 </head>
 <body>
+    <!--Top nav bar with a link back to the home page-->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <a class="navbar-brand" href="/">
+            <i class="bi bi-stars me-2"></i> Image Processing Toolkit
+        </a>
+    </nav>
+
+
     <div class="container">
-        <div id="resultContainer">
+        <div id="resultContainer" data-images='{{ (image_urls if image_urls is defined else [image_url]) | tojson }}' data-filenames='{{ (download_filenames if download_filenames is defined else [download_filename]) | tojson }}'>
             <h1 class="text-center mb-4">Transformed Image</h1>
-            <!-- Placeholder for the processed image -->
-            <img id="transformedImage" src="{{ image_url }}" alt="Transformed Image">
-            <p id="resultText" class="text-muted">Your image has been processed successfully with the specified parameters.</p>
-            <a href="{{ url_for('download_file', filename=download_filename) }}" class="btn btn-primary" download>
+
+            <!-- Carousel image display -->
+            <div class="mb-3 d-flex flex-column align-items-center">
+                <img id="transformedImage" src="" alt="Transformed Image" style="max-width:100%; height:auto; border-radius:8px; border:1px solid #ddd;">
+                <div class="mb-2" id="carousel-controls">
+                    <button id="prevResult" type="button" class="btn btn-sm btn-outline-primary me-2">Prev</button>
+                    <span id="resultIndex">0 / 0</span>
+                    <button id="nextResult" type="button" class="btn btn-sm btn-outline-primary ms-2">Next</button>
+                </div>
+            </div>
+
+            <p id="resultText" class="text-muted">Your image(s) have been processed successfully with the specified parameters.</p>
+            <a id="downloadBtn" href="#" class="btn btn-primary" download>
                 Download Image
+            </a>
+            <a id="downloadAllBtn" href="#" class="btn btn-primary" download>
+                Download All Images
             </a>
             <!-- Back to Upload Page Button -->
             <a href="/" class="btn btn-secondary">Upload Another Image (Metadata Overlay)</a>
@@ -59,5 +89,6 @@
 
     <!-- Add Bootstrap JS (Optional) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../static/js/results.js"></script>
 </body>
 </html>
