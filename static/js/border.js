@@ -395,7 +395,6 @@ if (dropzone) {
 }
 
 
-// File input change
 // File input change - support multiple files
 if (imageInput) {
     imageInput.addEventListener('change', (e) => {

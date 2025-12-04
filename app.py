@@ -10,6 +10,9 @@ from PIL import Image, ImageOps
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = "your_secret_key"  # Needed for session management
 
+# Cache static files for 1 hour
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600
+
 # Configure the upload folder
 UPLOAD_FOLDER = 'static/uploads'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER

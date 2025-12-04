@@ -42,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (prevBtn) prevBtn.disabled = total <= 1;
         if (nextBtn) nextBtn.disabled = total <= 1;
 
-        // Hide the Dwonload All button if only one image
+        // Hide the Download All button if only one image
         const downloadAllBtn = document.getElementById('downloadAllBtn');
         if (downloadAllBtn) {
             if (total <= 1) {
