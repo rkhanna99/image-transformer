@@ -193,11 +193,7 @@
 
 /* Consistent vertical spacing for the bottom button stack */
 #buttonStack .btn {
-    margin-top: 0; /* reset any global margins */
-}
-
-#buttonStack .btn + .btn {
-    margin-top: 12px; /* or 0.75rem, pick what looks best */
+    margin-top: 10px; /* reset any global margins */
 }
 
 #resetButton {

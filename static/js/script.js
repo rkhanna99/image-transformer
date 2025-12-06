@@ -38,6 +38,26 @@ if (addMoreImagesBtn) {
 let slides = [];          // array of .image-form-slide
 let currentSlideIndex = 0;
 
+function setResetButtonVisible(show) {
+    if (resetButton) {
+        resetButton.style.display = show ? "block" : "none";
+    }
+}
+
+function hideDropzoneContainer() {
+    const dropzoneContainer = document.getElementById("container");
+    if (dropzoneContainer) {
+        dropzoneContainer.classList.add("d-none");
+    }
+}
+
+function showDropzoneContainer() {
+    const dropzoneContainer = document.getElementById("container");
+    if (dropzoneContainer) {
+        dropzoneContainer.classList.remove("d-none");
+    }
+}
+
 // =======================================================
 // ===============  MULTI-IMAGE HELPERS  =================
 // =======================================================
@@ -58,15 +78,13 @@ function handleNewFiles(files) {
     });
 
     if (slides.length > 0) {
+        console.log(`${fileList.length} image(s) added, total slides: ${slides.length}`);
         currentSlideIndex = slides.length - 1; // jump to last added slide
         updateSlideVisibility();
-        resetButton.style.display = "block";
+        setResetButtonVisible(true);
 
         // NEW: hide the big dropzone container, show controls row
-        const dropzoneContainer = document.getElementById("container");
-        if (dropzoneContainer) {
-            dropzoneContainer.classList.add("d-none");
-        }
+        hideDropzoneContainer();
         if (imageListControls) {
             imageListControls.classList.remove("d-none");
         }
@@ -302,10 +320,7 @@ function updateSlideVisibility() {
         if (imageListControls) {
             imageListControls.classList.add("d-none");
         }
-        const dropzoneContainer = document.getElementById("container");
-        if (dropzoneContainer) {
-            dropzoneContainer.classList.remove("d-none");
-        }
+        showDropzoneContainer();
 
         return;
     }
@@ -396,11 +411,12 @@ function displayImagePreview(file) {
             previewImage.classList.remove('d-none');
             previewImage.style.display = "block"; 
         }
+        hideDropzoneContainer();
         if (dropzoneText) {
             dropzoneText.textContent = file.name;
         }
         console.log("Successfully uploaded the file");
-        resetButton.style.display = "block";
+        setResetButtonVisible(true);
     };
     reader.onerror = (e) => {
         console.error('Error reading file:', e);
@@ -418,7 +434,7 @@ function resetDropzone() {
         previewImage.style.display = "none";
         previewImage.src = "";
     }
-    resetButton.style.display = "none";
+    setResetButtonVisible(false);
 
     // Clear the file input value
     imageInput.value = "";
@@ -432,34 +448,33 @@ function resetDropzone() {
     currentSlideIndex = 0;
     updateSlideVisibility();
 
-    const dropzoneContainer = document.getElementById("container");
-    if (dropzoneContainer) {
-        dropzoneContainer.classList.remove("d-none");
-    }
+    showDropzoneContainer();
     if (imageListControls) {
         imageListControls.classList.add("d-none");
     }
 }
 
-resetButton.addEventListener("click", () => {
-    resetDropzone();
+if (resetButton) {
+    resetButton.addEventListener("click", () => {
+        resetDropzone();
 
-    console.log("Reset button clicked");
+        console.log("Reset button clicked");
 
-    // Reset aspect ratio dropdown (single-image legacy)
-    if (selectedAspectButton) {
-        selectedAspectButton.textContent = 'Default';
-        currentAspectRatio = 'Default';
-        if (customAspectInput) {
-            customAspectInput.classList.add('d-none');
-            customAspectInput.value = '';
-            customAspectInput.classList.remove('is-invalid', 'is-valid');
+        // Reset aspect ratio dropdown (single-image legacy)
+        if (selectedAspectButton) {
+            selectedAspectButton.textContent = 'Default';
+            currentAspectRatio = 'Default';
+            if (customAspectInput) {
+                customAspectInput.classList.add('d-none');
+                customAspectInput.value = '';
+                customAspectInput.classList.remove('is-invalid', 'is-valid');
+            }
         }
-    }
 
-    // Reset old aspect ratio buttons
-    aspectButtons.forEach(b => b.classList.remove('active'));
-});
+        // Reset old aspect ratio buttons
+        aspectButtons.forEach(b => b.classList.remove('active'));
+    });
+}
 
 // =======================================================
 // ========  SINGLE-IMAGE ASPECT RATIO (LEGACY)  =========
@@ -467,7 +482,9 @@ resetButton.addEventListener("click", () => {
 
 // Initialize aspect ratio dropdown
 document.addEventListener('DOMContentLoaded', function () {
-    setupAspectRatioDropdown();
+    if (selectedAspectButton && customAspectInput) {
+        setupAspectRatioDropdown();
+    }
 });
 
 function setupAspectRatioDropdown() {
@@ -622,29 +639,37 @@ async function submitMultiImageForm(formElem) {
 }
 
 // Unified submit handler
-uploadForm.addEventListener("submit", async function (e) {
-    e.preventDefault();
+if (uploadForm) {
+    uploadForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
 
-    // If we have slide state and multi HTML, use multi-image path
-    if (slides.length > 0 && imageFormTemplate && formsContainer && formsCarouselWrapper) {
-        await submitMultiImageForm(this);
-    } else {
-        await submitSingleImageForm(this);
-    }
-});
+        // If we have slide state and multi HTML, use multi-image path
+        if (slides.length > 0 && imageFormTemplate && formsContainer && formsCarouselWrapper) {
+            await submitMultiImageForm(this);
+        } else {
+            await submitSingleImageForm(this);
+        }
+    });
+}
 
 // Handle the reset all button (Just do a full reload)
-document.getElementById("resetAllBtn").addEventListener("click", function () {
-    console.log("Reset all button clicked. Reloading the page.");
-    location.reload();
-});
+const resetAllBtn = document.getElementById("resetAllBtn");
+if (resetAllBtn) {
+    resetAllBtn.addEventListener("click", function () {
+        console.log("Reset all button clicked. Reloading the page.");
+        location.reload();
+    });
+}
 
 // Handle the back button to return to the upload form
-document.getElementById("backButton").addEventListener("click", function () {
-    document.getElementById("uploadSection").style.display = "block";
-    document.getElementById("resultSection").style.display = "none";
-    document.getElementById("transformedImage").src = "";
-});
+const backButton = document.getElementById("backButton");
+if (backButton) {
+    backButton.addEventListener("click", function () {
+        document.getElementById("uploadSection").style.display = "block";
+        document.getElementById("resultSection").style.display = "none";
+        document.getElementById("transformedImage").src = "";
+    });
+}
 
 // =======================================================
 // ===== Original updateAspectRatioOptions (single) ======

@@ -4,6 +4,7 @@ from processing_scripts.image_transformer import process_image
 from processing_scripts.helpers import get_coordinates_from_address
 from processing_scripts.helpers import cleanup_directory
 from processing_scripts.helpers import create_simple_border
+from livereload import Server
 import os, atexit, math, uuid, zlib
 from PIL import Image, ImageOps
 
@@ -297,5 +298,22 @@ def download_all_files():
 atexit.register(cleanup_directory, UPLOAD_FOLDER)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Ensure template reloading is enabled
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+
+    server = Server(app)
+
+    # Watch your templates and static files
+    server.watch('templates/*.html')
+    server.watch('templates/**/*.html')
+    server.watch('static/css/*.css')
+    server.watch('static/js/*.js')
+    server.watch('static/**/*.css')
+    server.watch('static/**/*.js')
+
+    # Run livereload
+    server.serve(debug=True, port=5000)
+
+
 
