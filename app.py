@@ -4,6 +4,7 @@ from processing_scripts.image_transformer import process_image
 from processing_scripts.helpers import get_coordinates_from_address
 from processing_scripts.helpers import cleanup_directory
 from processing_scripts.helpers import create_simple_border
+from image_upload_service import process_metadata_overlay
 from livereload import Server
 import os, atexit, math, uuid, zlib
 from PIL import Image, ImageOps
@@ -139,93 +140,52 @@ def process_image_endpoint():
     
     print(f"Uploaded image: {file.filename}")
     
-    # Save the uploaded file
-    original_filename = secure_filename(file.filename)
-    unique_prefix = uuid.uuid4().hex[:8]
-    filename = f"{unique_prefix}_{original_filename}"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
-
-    
-    # filename = secure_filename(file.filename)
-    # filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    # file.save(filepath)
-
-    # Retrieve optional parameters from the request
-    address = request.form.get('address')
-    latitude = request.form.get('latitude', type=float)
-    longitude = request.form.get('longitude', type=float)
-    photo_title = request.form.get('photoName')
-    aspect_ratio = request.form.get('aspectRatio', 'Default')
-    print(f"Address: {address}, Latitude: {latitude}, Longitude: {longitude}, Photo Title: {photo_title}, Aspect Ratio: {aspect_ratio}")
-
-    # Check if we have received latitude and longitude
-    if latitude is None and longitude is None:
-        print("No latitude and longitude provided.")
-        # If address is provided, get coordinates from address
-        if address:
-            coordinates = get_coordinates_from_address(address)
-            print(f"Coordinates from address: {coordinates}")
-            if coordinates:
-                latitude, longitude = coordinates
-            else:
-                return jsonify({"error": "Invalid address"}), 400
-        else:
-            return jsonify({"error": "Address or Latitude and Longitude must be provided"}), 400
-
-    # Convert aspect ratio if custom
-    print_aspect_ratio = aspect_ratio
-    if aspect_ratio == "Custom":
-        custom_aspect = request.form.get('customAspectRatio')
-        if custom_aspect:
-            try:
-                width, height = map(int, custom_aspect.split(":"))
-                print_aspect_ratio = (width, height)
-            except ValueError:
-                return jsonify({"error": "Invalid custom aspect ratio"}), 400
-    elif aspect_ratio == "Default":
-        # Open the image to determine its aspect ratio
-        with Image.open(filepath) as img:
-            # Ensure the image is in its correct orientation after opening it
-            img = ImageOps.exif_transpose(img)
-            width, height = img.size
-
-            # Need to reduce width and height to their simplest form
-            gcd = math.gcd(width, height)
-            width //= gcd
-            height //= gcd
-            print_aspect_ratio = (width, height)
-
-    # Log the final aspect ratio being used
-    print(f"Aspect Ratio for Print: {print_aspect_ratio}")        
-
-    # Process the image using the process_image function
     try:
-        processed_image = process_image(
-            filepath,
-            latitude=latitude,
-            longitude=longitude,
-            photo_title=photo_title,
-            print_aspect_ratio=print_aspect_ratio,
-            local_save=False # Not saving it locally within the function, will only save in the static/uploads folder
-        )
+        # Call the helper function to handle the incoming reuqest and process the image
+        processed_image_path = process_metadata_overlay(file, request.form, app.config['UPLOAD_FOLDER'])
 
-        # Save the processed image to return
-        processed_image_filename = f"processed_{filename}"
-        processed_image_path = os.path.join(app.config['UPLOAD_FOLDER'], processed_image_filename)
-        processed_image.save(processed_image_path, quality=100, optimize=True, progressive=True)
+        if not processed_image_path:
+            print("No processed image path returned")
+            return redirect(session.get('last_referrer', url_for('upload_form')))
 
-        print(f"Processed image saved at: {processed_image_path}")
+        # Store the processed image in session for the results page
+        session['processed_image_url'] = url_for('static', filename=f"uploads/{os.path.basename(processed_image_path)}")
+        session['processed_image_filename'] = os.path.basename(processed_image_path)
 
-        # Store the processed image path in session for use in the results page
-        session['processed_image_urls'] = url_for('static', filename=f"uploads/{processed_image_filename}")
-        session['processed_image_filenames'] = processed_image_filename
-
-        # Redirect to the results page
         return redirect(url_for('results_page'))
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print("Error during image processing:", e)
+        return redirect(session.get('last_referrer', url_for('upload_form')))
+    
+@app.route('/process-images', methods=['POST'])
+def process_images_endpoint():
+    # Store referrer for error redirection
+    session['last_referrer'] = request.referrer or url_for('upload_form')
+
+    # Check if the images tag is in the request
+    if "images" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    else:
+        print(len(request.files))
+    
+    # Iterate through the list of images and process each one
+    image_list = request.files.getlist('images')
+    num_images = len(image_list)
+    for index in range(0, num_images):
+        curr_image = image_list[index]
+
+        # Set up the current form
+        curr_form = {
+            'address': request.form.get(f'address[{index}]'),
+            'latitude': request.form.get(f'latitude[{index}]'),
+            'longitude': request.form.get(f'longitude[{index}]'),
+            'photoName': request.form.get(f'photoName[{index}]'),
+            'aspectRatio': request.form.get(f'aspectRatio[{index}]'),
+            'customAspectRatio': request.form.get(f'customAspectRatio[{index}]'),
+        }
+
+        
 
 # Results page
 @app.route('/results')
@@ -313,7 +273,7 @@ if __name__ == '__main__':
     server.watch('static/**/*.js')
 
     # Run livereload
-    server.serve(debug=True, port=5000)
+    server.serve(host="0.0.0.0" ,debug=True, port=5000)
 
 
 

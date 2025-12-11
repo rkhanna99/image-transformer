@@ -16,7 +16,7 @@ RUN pip install --upgrade pip \
 	&& pip install --no-cache-dir -r requirements.txt
 
 # Copy project files
-# COPY . /app/
+COPY . /app/
 
 # Ensure upload and font folders exist
 RUN mkdir -p static/uploads fonts
@@ -29,4 +29,7 @@ ENV FLASK_APP=app.py
 ENV FLASK_RUN_HOST=0.0.0.0
 
 # Run the application
-CMD ["flask", "run", "--host=0.0.0.0", "--port=5000"]
+# CMD ["flask", "run", "--host=0.0.0.0", "--port=5000"]
+
+# Running the application with livereload for development
+CMD ["python", "app.py"]
