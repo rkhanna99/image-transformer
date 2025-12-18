@@ -558,9 +558,7 @@ async function submitSingleImageForm(formElem) {
         });
 
         if (response.ok) {
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            sessionStorage.setItem("transformedImageURL", url);
+            // Let Flask serve the results page directly
             window.location.href = "/results";
         } else {
             const error = await response.json();
@@ -593,7 +591,7 @@ async function submitMultiImageForm(formElem) {
     slides.forEach((slide, idx) => {
         const file = slide._file;
         if (file) {
-            formData.append(`images[${idx}]`, file, file.name);
+            formData.append("images", file, file.name);
         }
 
         const address = slide.querySelector('[data-field="address"]')?.value || "";
@@ -615,16 +613,14 @@ async function submitMultiImageForm(formElem) {
     }
 
     try {
-        // 👉 adjust the URL and response handling to match your multi-image API
+        // Adjust the URL and response handling to match your multi-image API
         const response = await fetch("/process-images", {
             method: "POST",
             body: formData,
         });
 
         if (response.ok) {
-            const result = await response.json();
-            // Store JSON in sessionStorage for results page to render
-            sessionStorage.setItem("multiTransformedResults", JSON.stringify(result));
+            // Let Flask serve the results page directly
             window.location.href = "/results";
         } else {
             const error = await response.json();

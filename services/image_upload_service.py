@@ -1,9 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, send_from_directory
 from werkzeug.utils import secure_filename
 from processing_scripts.image_transformer import process_image
-from processing_scripts.helpers import get_coordinates_from_address
-from processing_scripts.helpers import cleanup_directory
-from processing_scripts.helpers import create_simple_border
+from processing_scripts.helpers import *
 from livereload import Server
 import os, atexit, math, uuid, zlib
 from PIL import Image, ImageOps
@@ -31,8 +29,8 @@ def process_metadata_overlay(file, form, upload_folder):
 
     # Extract the form data
     address = form.get('address')
-    latitude = form.get('latitude', type=float)
-    longitude = form.get('longitude', type=float)
+    latitude = to_float(form.get('latitude'))
+    longitude = to_float(form.get('longitude'))
     photo_title = form.get('photoName')
     aspect_ratio = form.get('aspectRatio', 'Default')
     print(f"Address: {address}, Latitude: {latitude}, Longitude: {longitude}, Photo Title: {photo_title}, Aspect Ratio: {aspect_ratio}")

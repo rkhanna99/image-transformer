@@ -1,10 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, send_from_directory
 from werkzeug.utils import secure_filename
 from processing_scripts.image_transformer import process_image
-from processing_scripts.helpers import get_coordinates_from_address
-from processing_scripts.helpers import cleanup_directory
-from processing_scripts.helpers import create_simple_border
-from image_upload_service import process_metadata_overlay
+from processing_scripts.helpers import *
+from services.image_upload_service import process_metadata_overlay
 from livereload import Server
 import os, atexit, math, uuid, zlib
 from PIL import Image, ImageOps
@@ -176,14 +174,41 @@ def process_images_endpoint():
         curr_image = image_list[index]
 
         # Set up the current form
+        
         curr_form = {
-            'address': request.form.get(f'address[{index}]'),
-            'latitude': request.form.get(f'latitude[{index}]'),
-            'longitude': request.form.get(f'longitude[{index}]'),
-            'photoName': request.form.get(f'photoName[{index}]'),
-            'aspectRatio': request.form.get(f'aspectRatio[{index}]'),
-            'customAspectRatio': request.form.get(f'customAspectRatio[{index}]'),
+            "address": request.form.get(f"address[{index}]"),
+            "latitude": to_float(request.form.get(f"latitude[{index}]")),
+            "longitude": to_float(request.form.get(f"longitude[{index}]")),
+            "photoName": request.form.get(f"photoName[{index}]"),
+            "aspectRatio": request.form.get(f"aspectRatio[{index}]") or "Default",
+            "customAspectRatio": request.form.get(f"customAspectRatio[{index}]"),
         }
+
+        try:
+            # Call the helper function to handle the incoming request and process the image
+            processed_image_path = process_metadata_overlay(curr_image, curr_form, app.config['UPLOAD_FOLDER'])
+
+            if not processed_image_path:
+                print("No processed image path returned for file:", curr_image.filename)
+                continue
+            
+            # Store the processed image in session for the results page
+            if 'processed_image_urls' not in session:
+                session['processed_image_urls'] = []
+                session['processed_image_filenames'] = []
+
+            session['processed_image_urls'].append(url_for('static', filename=f"uploads/{os.path.basename(processed_image_path)}"))
+            session['processed_image_filenames'].append(os.path.basename(processed_image_path))
+
+        except Exception as e:
+            print("Error during image processing for file", curr_image.filename, ":", e)
+            continue
+
+    if 'processed_image_urls' not in session or len(session['processed_image_urls']) == 0:
+        return redirect(session.get('last_referrer', url_for('upload_form')))
+    
+    return redirect(url_for('results_page'))
+                  
 
         
 
@@ -262,7 +287,7 @@ if __name__ == '__main__':
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-    server = Server(app)
+    server = Server(app.wsgi_app)
 
     # Watch your templates and static files
     server.watch('templates/*.html')
@@ -273,7 +298,7 @@ if __name__ == '__main__':
     server.watch('static/**/*.js')
 
     # Run livereload
-    server.serve(host="0.0.0.0" ,debug=True, port=5000)
+    server.serve(host="127.0.0.1", debug=True, port=5000)
 
 
 

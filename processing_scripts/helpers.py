@@ -766,7 +766,7 @@ def cleanup_directory(directory: str):
                 print(f"Error removing {file_path}: {e}")
 
 
-# ----------------------------------------------- Baisc Border Helper Functions ----------------------------------------------------------
+# ----------------------------------------------- Basic Border Helper Functions ----------------------------------------------------------
 
 # Helper function to create a simple white border around an image given an image, desired aspect ratio, and border size
 def create_simple_border(image: Image, target_aspect_ratio: tuple[int, int], border_percentage: int) -> Image:
@@ -811,3 +811,13 @@ def create_simple_border(image: Image, target_aspect_ratio: tuple[int, int], bor
 
     image = ImageOps.expand(image, border=padding, fill="white")
     return image
+
+
+# ------------------------------------------------------ String utility Functions ------------------------------------------------------
+
+# Convert a value to float or return None if it cannot be converted (Used when parsing the request)
+def to_float(val):
+    try:
+        return float(val) if val not in (None, "", "null") else None
+    except ValueError:
+        return None

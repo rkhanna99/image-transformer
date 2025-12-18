@@ -1,84 +1,159 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const container = document.getElementById('resultContainer');
-    if (!container) return;
+  const container = document.getElementById('resultContainer');
+  if (!container) return;
 
-    // Read images and filenames from data attributes (JSON strings)
-    let images = [];
-    let filenames = [];
+  let images = [];
+  let filenames = [];
+  try { images = JSON.parse(container.dataset.images || '[]'); } catch { images = []; }
+  try { filenames = JSON.parse(container.dataset.filenames || '[]'); } catch { filenames = []; }
+
+  if (!Array.isArray(images)) images = [images];
+  if (!Array.isArray(filenames)) filenames = [filenames];
+
+  const imgEl = document.getElementById('transformedImage');
+  const prevBtn = document.getElementById('prevResult');
+  const nextBtn = document.getElementById('nextResult');
+  const indexEl = document.getElementById('resultIndex');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const downloadAllBtn = document.getElementById('downloadAllBtn');
+
+  if (!imgEl) return;
+
+  let current = 0;
+  const total = images.length || 1;
+
+  // ---- Blob URL cache: originalSrc -> blobUrl ----
+  const blobUrlCache = new Map();
+  const inflight = new Map(); // originalSrc -> Promise<blobUrl>
+
+  async function getBlobUrl(src) {
+    if (!src) return "";
+    if (blobUrlCache.has(src)) return blobUrlCache.get(src);
+    if (inflight.has(src)) return inflight.get(src);
+
+    const p = (async () => {
+      const res = await fetch(src, { cache: "force-cache" });
+      if (!res.ok) throw new Error(`Failed to fetch: ${src}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      blobUrlCache.set(src, blobUrl);
+      return blobUrl;
+    })()
+      .finally(() => inflight.delete(src));
+
+    inflight.set(src, p);
+    return p;
+  }
+
+  async function decodeIntoImg(srcOrBlobUrl) {
+    if (!srcOrBlobUrl) return;
+    // Decode in background when supported (reduces jank)
+    const tmp = new Image();
+    tmp.src = srcOrBlobUrl;
     try {
-        images = JSON.parse(container.dataset.images || '[]');
-    } catch (e) {
-        console.error('Failed to parse images data:', e);
-        images = [];
+      if (typeof tmp.decode === "function") await tmp.decode();
+    } catch (_) {}
+  }
+
+  function setDownloads() {
+    // Download-all
+    if (downloadAllBtn) {
+      downloadAllBtn.style.display = total <= 1 ? 'none' : 'inline-block';
+      if (total > 1) downloadAllBtn.href = `/download-all`;
     }
+
+    // Per-image download
+    const filename = (filenames && filenames[current]) || null;
+    const src = images[current] || images[0] || '';
+    if (!downloadBtn) return;
+
+    if (filename) {
+      downloadBtn.href = `/download/${encodeURIComponent(filename)}`;
+      downloadBtn.setAttribute('download', filename);
+    } else if (src) {
+      downloadBtn.href = src;
+      downloadBtn.removeAttribute('download');
+    } else {
+      downloadBtn.href = '#';
+    }
+  }
+
+  function setIndex() {
+    if (indexEl) indexEl.textContent = `${current + 1} / ${total}`;
+    if (prevBtn) prevBtn.disabled = total <= 1;
+    if (nextBtn) nextBtn.disabled = total <= 1;
+  }
+
+  function neighborIndexes(idx) {
+    if (total <= 1) return [];
+    const prev = (idx - 1 + total) % total;
+    const next = (idx + 1) % total;
+    const next2 = (idx + 2) % total;
+    return [prev, next, next2];
+  }
+
+  let navToken = 0;
+
+  async function updateUI() {
+    const token = ++navToken;
+
+    setIndex();
+    setDownloads();
+
+    const src = images[current] || images[0] || '';
+    if (!src) return;
+
+    // Get cached blob URL (fetches once)
+    let blobUrl = "";
     try {
-        filenames = JSON.parse(container.dataset.filenames || '[]');
+      blobUrl = await getBlobUrl(src);
     } catch (e) {
-        console.error('Failed to parse filenames data:', e);
-        filenames = [];
+      console.error(e);
+      // fallback: show normal src if blob fetch fails
+      blobUrl = src;
     }
+    if (token !== navToken) return;
 
-    // Normalize to arrays
-    if (!Array.isArray(images)) images = [images];
-    if (!Array.isArray(filenames)) filenames = [filenames];
+    // decode off-thread before swapping (best effort)
+    await decodeIntoImg(blobUrl);
+    if (token !== navToken) return;
 
-    const imgEl = document.getElementById('transformedImage');
-    const prevBtn = document.getElementById('prevResult');
-    const nextBtn = document.getElementById('nextResult');
-    const indexEl = document.getElementById('resultIndex');
-    const downloadBtn = document.getElementById('downloadBtn');
+    imgEl.loading = "eager";
+    imgEl.decoding = "async";
+    imgEl.src = blobUrl;
 
-    if (!imgEl) return;
-
-    let current = 0;
-    const total = images.length || 1;
-
-    function updateUI() {
-        const src = images[current] || images[0] || '';
-        imgEl.src = src;
-        indexEl.textContent = `${current + 1} / ${total}`;
-
-        // Disable/enable buttons based on total
-        if (prevBtn) prevBtn.disabled = total <= 1;
-        if (nextBtn) nextBtn.disabled = total <= 1;
-
-        // Hide the Download All button if only one image
-        const downloadAllBtn = document.getElementById('downloadAllBtn');
-        if (downloadAllBtn) {
-            if (total <= 1) {
-                downloadAllBtn.style.display = 'none';
-            } else {
-                downloadAllBtn.style.display = 'inline-block';
-                // Set href to the server-side ZIP endpoint (uses session data)
-                // The backend expects the processed filenames in session, so no query string is required.
-                downloadAllBtn.href = `/download-all`;
-            }
-        }
-
-        // Update download link if filename provided
-        const filename = (filenames && filenames[current]) || null;
-        if (filename) {
-            // build URL using current origin + download route if needed
-            // assume backend provides direct download URL via /download/<filename>
-            downloadBtn.href = `/download/${encodeURIComponent(filename)}`;
-            downloadBtn.setAttribute('download', filename);
-        } else if (src) {
-            downloadBtn.href = src;
-            downloadBtn.removeAttribute('download');
-        } else {
-            downloadBtn.href = '#';
-        }
-    }
-
-    if (prevBtn) prevBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); current = (current - 1 + total) % total; updateUI(); });
-    if (nextBtn) nextBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); current = (current + 1) % total; updateUI(); });
-
-    // keyboard support
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowLeft') { current = (current - 1 + total) % total; updateUI(); }
-        if (e.key === 'ArrowRight') { current = (current + 1) % total; updateUI(); }
+    // Preload neighbors in background
+    neighborIndexes(current).forEach(async (i) => {
+      const nSrc = images[i];
+      if (!nSrc) return;
+      try {
+        const nBlob = await getBlobUrl(nSrc);
+        decodeIntoImg(nBlob);
+      } catch (_) {}
     });
+  }
 
-    // Initial UI
+  function go(delta) {
+    if (total <= 1) return;
+    current = (current + delta + total) % total;
     updateUI();
+  }
+
+  if (prevBtn) prevBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); go(-1); });
+  if (nextBtn) nextBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); go(1); });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') go(-1);
+    if (e.key === 'ArrowRight') go(1);
+  });
+
+  // Initial paint
+  updateUI();
+
+  // Cleanup blob URLs when leaving page (avoid memory leaks)
+  window.addEventListener("beforeunload", () => {
+    for (const blobUrl of blobUrlCache.values()) {
+      try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+    }
+  });
 });
