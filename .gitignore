@@ -1,0 +1,91 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-wheel-metadata/
+
+# =========================
+# Flask / Runtime
+# =========================
+instance/
+*.log
+flask_session/
+.coverage
+htmlcov/
+
+# =========================
+# Image outputs & uploads
+# =========================
+static/uploads/
+static/processed/
+static/tmp/
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.tiff
+*.bmp
+
+# (keep sample images if needed)
+!color_palette.jpg
+
+# =========================
+# Generated artifacts
+# =========================
+*.zip
+*.tar
+*.tar.gz
+*.cache
+.cache/
+
+# =========================
+# OS / Editor junk
+# =========================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# =========================
+# Docker
+# =========================
+.env
+.env.*
+docker-data/
+**/.dockerignore
+
+# =========================
+# Testing / Coverage
+# =========================
+.pytest_cache/
+test-results/
+coverage.xml
+
+# =========================
+# Project notes / local scratch
+# =========================
+project_notes/
+locations.txt
+
+# =========================
+# Node / Frontend (future-proof)
+# =========================
+node_modules/
+dist/
+build/
+
+# =========================
+# Misc
+# =========================
+*.bak
+*.tmp
