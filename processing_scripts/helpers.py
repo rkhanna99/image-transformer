@@ -250,7 +250,7 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
 
     # Set the text on the 2nd line
     if img_name:
-        second_line_left = f"{metadata['Make']} {metadata['Model']} w/{metadata['LensModel']}"
+        second_line_left = f"{metadata['Make']} {metadata['Model']} w/{metadata['LensMake'].capitalize()} {metadata['LensModel']}"
     else:
         second_line_left = f"{metadata['LensModel']}"
     second_line_right = f"{metadata['DateTimeOriginal']}"
@@ -447,7 +447,7 @@ def get_palette_dimensions(img, num_colors):
     return {"palette_width": palette_width, "palette_height": palette_height}
 
 # Helper function that will override the Pylette display function
-def local_display(self, w: float = 50.0, h: float = 50.0, save_to_file: bool = False, filename: str = "color_palette", extension: str = "jpg",) -> None:
+def local_display(self, w: float = 50.0, h: float = 50.0, save_to_file: bool = False, filename: str = "color_palette", extension: str = "jpg",) -> Image:
     """
     Displays the color palette as an image, with an option for saving the image.
 
@@ -479,6 +479,8 @@ def local_display(self, w: float = 50.0, h: float = 50.0, save_to_file: bool = F
 
     if save_to_file:
         img.save(f"{filename}.{extension}")
+
+    return img
 
 # Helper function to save the new image in the highest quality possible
 def save_image(image_to_save: Image, original_image_path: str, destination_folder: str):

@@ -6,12 +6,12 @@ services:
     build: .
     container_name: image_transformer
     ports:
-      - "0:5000" # Dynamically select a port on the host machine
+      - "55000:5000" # Map host port 55000 to container 5000 for local/dev access
     volumes:
       - .:/app
       - ./static/uploads:/app/static/uploads # Mounting the uploads directory to persist uploaded files directly
     environment:
-      - FLASK_ENV=development
+      - DEV=1
       - FLASK_DEBUG=1
     restart: unless-stopped
   

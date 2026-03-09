@@ -61,8 +61,15 @@
 
 
     <div class="container">
-        <div id="resultContainer" data-images='{{ (image_urls if image_urls is defined else [image_url]) | tojson }}' data-filenames='{{ (download_filenames if download_filenames is defined else [download_filename]) | tojson }}'>
+        <div id="resultContainer" data-job-id="{{ job_id }}" data-status="{{ initial_status }}" data-source="{{ source }}" data-images='{{ (image_urls if image_urls is defined else []) | tojson }}' data-filenames='{{ (download_filenames if download_filenames is defined else []) | tojson }}'>
             <h1 class="text-center mb-4">Transformed Image</h1>
+            <div id="jobStatusBanner" class="alert alert-secondary" role="status">Preparing job status...</div>
+            <div id="jobErrorBanner" class="alert alert-danger d-none" role="alert"></div>
+            <div id="jobLoading" class="mb-3">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
 
             <!-- Carousel image display -->
             <div class="mb-3 d-flex flex-column align-items-center">

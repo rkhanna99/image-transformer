@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  image-transformer:
+    image: image-transformer:latest
+    build:
+      context: .
+    container_name: image_transformer_prod
+    ports:
+      - "5000:5000" # Expose container port 5000 on host
+    volumes: []
+    environment:
+      - DEV=0
+      - PRODUCTION=1
+      - FLASK_DEBUG=0
+      - SECRET_KEY=${SECRET_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

@@ -40,7 +40,50 @@ If you prefer a fixed port, change it to `"5000:5000"` in `docker-compose.yml`.
 - `/` is the tool chooser.
 - `/metadata` uploads images for metadata overlays.
 - `/border` uploads images for white borders.
-- Results render in `/results` with single or bulk download options.
+- Upload endpoints create background jobs and return a `job_id`.
+- Results render in `/results/<job_id>` and poll `/api/jobs/<job_id>` until processing completes.
+
+## Endpoint payloads
+All processing endpoints accept `multipart/form-data` because files are uploaded with the request.
+The preferred contract is a `payload` form field containing JSON.
+
+`POST /process-image`
+```json
+{
+  "address": "Oeschinensee, Switzerland",
+  "latitude": "46.4975",
+  "longitude": "7.7149",
+  "photoName": "Lake Oeschinensee",
+  "aspectRatio": "Default",
+  "customAspectRatio": null
+}
+```
+
+`POST /process-images`
+```json
+{
+  "images": [
+    {
+      "address": "Zermatt, Switzerland",
+      "latitude": null,
+      "longitude": null,
+      "photoName": "Matterhorn",
+      "aspectRatio": "4:5",
+      "customAspectRatio": "4:5"
+    }
+  ]
+}
+```
+
+`POST /white-border`
+```json
+{
+  "borderSize": 12,
+  "aspectRatio": "3:2"
+}
+```
+
+The legacy flat form fields are still accepted as a fallback.
 
 ## Project layout
 - `app.py` - Flask entrypoint and routes.
@@ -51,7 +94,8 @@ If you prefer a fixed port, change it to `"5000:5000"` in `docker-compose.yml`.
 - `tests/` - Experimental scripts (not a full test suite).
 
 ## Configuration notes
-- Uploads are stored in `static/uploads` and cleaned on startup and exit.
+- Uploaded inputs and outputs are stored per job under `static/uploads/jobs/<job_id>/`.
+- Job metadata is stored in `data/jobs/<job_id>.json`.
 - `app.secret_key` is hard-coded for now; move to an env var for production.
 - Geocoding uses Nominatim via `geopy` and can be rate-limited.
 
@@ -62,7 +106,9 @@ If you prefer a fixed port, change it to `"5000:5000"` in `docker-compose.yml`.
 
 ## Known limitations
 - EXIF can be missing or incomplete; some metadata fields may be blank.
-- Long-running batch processing is synchronous and can be slow for large sets.
+- Background execution currently uses an in-process thread pool for local development.
+- Jobs do not survive a full app restart while running; interrupted jobs are marked failed on next boot.
+- Uploaded files still live on the web node filesystem; move to object storage for production.
 - Tests are not automated; add a test harness if you need CI.
 
 ## Improvement backlog

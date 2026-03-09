@@ -106,8 +106,10 @@ def process_image(image_path: string, latitude: float=None, longitude: float=Non
     palette = extract_colors(image=image_path, palette_size=7)
     palette_dimensions = get_palette_dimensions(img, 7)
     print(palette_dimensions)
-    palette.display(w=palette_dimensions["palette_width"], h=palette_dimensions["palette_width"],filename='color_palette', extension='jpg', save_to_file=True)
-    palette_image = Image.open('./color_palette.jpg')
+    palette_image = palette.display(
+        w=palette_dimensions["palette_width"],
+        h=palette_dimensions["palette_width"],
+    )
 
     # Stack the 3 images together (Metadata image -> main image -> palette image)
 

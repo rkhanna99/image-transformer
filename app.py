@@ -1,304 +1,283 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
 from werkzeug.utils import secure_filename
-from processing_scripts.image_transformer import process_image
-from processing_scripts.helpers import *
-from services.image_upload_service import process_metadata_overlay
 from livereload import Server
-import os, atexit, math, uuid, zlib
-from PIL import Image, ImageOps
+import os
+from io import BytesIO
+import logging
+from pathlib import Path
+import zipfile
 
-app = Flask(__name__, static_folder='static', template_folder='templates')
-app.secret_key = "your_secret_key"  # Needed for session management
+from services.job_queue import JobQueue, JobStore
+from services.request_payloads import parse_batch_metadata_payload, parse_border_payload, parse_single_metadata_payload
 
-# Cache static files for 1 hour
-app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 3600
 
-# Configure the upload folder
-UPLOAD_FOLDER = 'static/uploads'
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app = Flask(__name__, static_folder="static", template_folder="templates")
+app.secret_key = os.getenv("SECRET_KEY", "your_secret_key")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+logger = logging.getLogger("image_transformer.app")
 
-# Ensure the upload folder exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
 
-# Clear the uploads folder on startup
-cleanup_directory(UPLOAD_FOLDER)
+PROJECT_ROOT = Path(__file__).resolve().parent
+STATIC_UPLOAD_ROOT = PROJECT_ROOT / "static" / "uploads" / "jobs"
+JOB_STORE_ROOT = PROJECT_ROOT / "data" / "jobs"
 
-# Default route to the home page
-@app.route('/')
+STATIC_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+JOB_STORE_ROOT.mkdir(parents=True, exist_ok=True)
+
+job_store = JobStore(str(JOB_STORE_ROOT))
+job_store.mark_incomplete_jobs_failed()
+job_queue = JobQueue(job_store)
+
+
+def build_job_file_urls(job_id: str, outputs: list[dict]) -> tuple[list[str], list[str], list[str]]:
+    preview_urls = []
+    image_urls = []
+    filenames = []
+    for output in outputs:
+        filename = output["output_filename"]
+        preview_filename = output.get("preview_filename", filename)
+        preview_urls.append(url_for("static", filename=f"uploads/jobs/{job_id}/{preview_filename}"))
+        image_urls.append(url_for("static", filename=f"uploads/jobs/{job_id}/{filename}"))
+        filenames.append(filename)
+    return preview_urls, image_urls, filenames
+
+
+def serialize_job(job: dict) -> dict:
+    payload = dict(job)
+    outputs = payload.get("outputs", [])
+    preview_urls, image_urls, filenames = build_job_file_urls(job["id"], outputs)
+    payload["preview_urls"] = preview_urls
+    payload["image_urls"] = image_urls
+    payload["download_filenames"] = filenames
+    payload["results_page_url"] = url_for("results_page", job_id=job["id"])
+    payload["status_url"] = url_for("job_status", job_id=job["id"])
+    return payload
+
+
+def create_job_folder(job_id: str) -> Path:
+    job_folder = STATIC_UPLOAD_ROOT / job_id
+    job_folder.mkdir(parents=True, exist_ok=True)
+    return job_folder
+
+
+def save_uploaded_files(files, job_folder: Path) -> list[dict]:
+    saved_items = []
+    for file in files:
+        if not file or file.filename == "":
+            continue
+        original_filename = secure_filename(file.filename)
+        input_filename = f"input_{original_filename}"
+        input_path = job_folder / input_filename
+        file.save(input_path)
+        saved_items.append(
+            {
+                "original_filename": original_filename,
+                "input_filename": input_filename,
+                "input_path": str(input_path),
+            }
+        )
+    return saved_items
+
+
+@app.route("/")
 def home():
     return render_template("home.html")
 
-# Route for the metadata overlay form
-@app.route('/metadata')
+
+@app.route("/metadata")
 def upload_form():
-    return render_template('upload.html')
+    return render_template("upload.html")
 
-# Route for the white border form
-@app.route('/border')
+
+@app.route("/border")
 def border_form():
-    return render_template('border.html')
+    return render_template("border.html")
 
-# White border route
-@app.route('/white-border', methods=['POST'])
-def white_border_endpoint():
-    # Store referrer for error redirection
-    session['last_referrer'] = request.referrer or url_for('border_form')
 
-    # Expect multiple files under the 'images' field
-    if 'images' not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-
-    # Grab the border size and aspect ratio from the request body
-    border_size = int(request.form.get('borderSize', 0))
-    aspect_ratio = request.form.get('aspectRatio', 'Default')
-
-    processed_urls = []
-    processed_filenames = []
-
-    # Iterate through uploaded images and process each of them separately
-    for image in request.files.getlist('images'):
-        if not image or image.filename == '':
-            continue
-
-        print(f"Uploaded image: {image.filename}")
-        original_filename = secure_filename(image.filename)
-        unique_prefix = uuid.uuid4().hex[:8]
-        filename = f"{unique_prefix}_{original_filename}"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        image.save(filepath)
-
-        # Determine aspect ratio tuple for THIS image
-        if aspect_ratio == 'Default':
-            with Image.open(filepath) as img:
-                img = ImageOps.exif_transpose(img)
-                width, height = img.size
-                aspect_ratio_tuple = (width, height)
-        else:
-            parsed_aspect_ratio = aspect_ratio.split(':')
-            if len(parsed_aspect_ratio) == 2:
-                try:
-                    w, h = map(int, parsed_aspect_ratio)
-                    aspect_ratio_tuple = (w, h)
-                except ValueError:
-                    # Skip this image if aspect ratio parsing failed
-                    print(f"Invalid aspect ratio provided: {aspect_ratio}")
-                    continue
-            else:
-                # Invalid aspect ratio format
-                print(f"Invalid aspect ratio format: {aspect_ratio}")
-                continue
-
-        print(f"Processing {filename} with aspect {aspect_ratio_tuple} and border {border_size}")
-
-        try:
-            with Image.open(filepath) as img:
-                img = ImageOps.exif_transpose(img)
-                processed_image = create_simple_border(img, aspect_ratio_tuple, border_size)
-
-            processed_image_filename = f"border_{filename}"
-            processed_image_path = os.path.join(app.config['UPLOAD_FOLDER'], processed_image_filename)
-            processed_image.save(processed_image_path, quality=100, optimize=True, progressive=True)
-
-            print(f"Processed image saved at: {processed_image_path}")
-
-            # Append URLs and filenames for the results page
-            processed_urls.append(url_for('static', filename=f"uploads/{processed_image_filename}"))
-            processed_filenames.append(processed_image_filename)
-
-        except Exception as e:
-            print(f"Error processing image {filename}: {str(e)}")
-            # skip on error and continue with next image
-            continue
-
-    if len(processed_urls) == 0:
-        # No successful processed images
-        return redirect(session.get('last_referrer', url_for('border_form')))
-
-    # Store the list of processed images in session for the results page
-    session['processed_image_urls'] = processed_urls
-    session['processed_image_filenames'] = processed_filenames
-
-    return redirect(url_for('results_page'))
-
-# Processing image endpoint
-@app.route('/process-image', methods=['POST'])
+@app.post("/process-image")
 def process_image_endpoint():
-    # Store referrer for error redirection
-    session['last_referrer'] = request.referrer or url_for('upload_form')
-
-    # Check if a file is uploaded
-    if 'image' not in request.files:
+    if "image" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
-    file = request.files['image']
-
-    # Check if a file is selected
-    if file.filename == '':
+    file = request.files["image"]
+    if file.filename == "":
         return jsonify({"error": "No selected file"}), 400
-    
-    print(f"Uploaded image: {file.filename}")
-    
+
     try:
-        # Call the helper function to handle the incoming reuqest and process the image
-        processed_image_path = process_metadata_overlay(file, request.form, app.config['UPLOAD_FOLDER'])
+        payload = parse_single_metadata_payload(request.form)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    job = job_store.create_job(job_type="metadata", source="metadata", total_items=1)
+    job_folder = create_job_folder(job["id"])
+    saved_items = save_uploaded_files([file], job_folder)
+    if not saved_items:
+        return jsonify({"error": "No valid file uploaded"}), 400
 
-        if not processed_image_path:
-            print("No processed image path returned")
-            return redirect(session.get('last_referrer', url_for('upload_form')))
+    items = [
+        {
+            **saved_items[0],
+            "form": payload.as_form(),
+        }
+    ]
 
-        # Store the processed image in session for the results page
-        session['processed_image_url'] = url_for('static', filename=f"uploads/{os.path.basename(processed_image_path)}")
-        session['processed_image_filename'] = os.path.basename(processed_image_path)
+    logger.info("Submitting metadata job_id=%s items=%s source=single", job["id"], len(items))
+    job_queue.submit_metadata_job(job["id"], str(job_folder), items)
+    created_job = job_queue.refresh_job(job["id"]) or job
+    return jsonify(serialize_job(created_job)), 202
 
-        return redirect(url_for('results_page'))
 
-    except Exception as e:
-        print("Error during image processing:", e)
-        return redirect(session.get('last_referrer', url_for('upload_form')))
-    
-@app.route('/process-images', methods=['POST'])
+@app.post("/process-images")
 def process_images_endpoint():
-    # Store referrer for error redirection
-    session['last_referrer'] = request.referrer or url_for('upload_form')
-
-    # Check if the images tag is in the request
     if "images" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
-    else:
-        print(len(request.files))
-    
-    # Iterate through the list of images and process each one
-    image_list = request.files.getlist('images')
-    num_images = len(image_list)
-    for index in range(0, num_images):
-        curr_image = image_list[index]
 
-        # Set up the current form
-        
-        curr_form = {
-            "address": request.form.get(f"address[{index}]"),
-            "latitude": to_float(request.form.get(f"latitude[{index}]")),
-            "longitude": to_float(request.form.get(f"longitude[{index}]")),
-            "photoName": request.form.get(f"photoName[{index}]"),
-            "aspectRatio": request.form.get(f"aspectRatio[{index}]") or "Default",
-            "customAspectRatio": request.form.get(f"customAspectRatio[{index}]"),
-        }
+    files = request.files.getlist("images")
+    try:
+        payload = parse_batch_metadata_payload(request.form, len(files))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    job = job_store.create_job(job_type="metadata", source="metadata", total_items=len(files))
+    job_folder = create_job_folder(job["id"])
+    saved_items = save_uploaded_files(files, job_folder)
+    if not saved_items:
+        return jsonify({"error": "No valid files uploaded"}), 400
+    if len(payload.images) != len(saved_items):
+        return jsonify({"error": "Payload image count must match uploaded image count"}), 400
 
-        try:
-            # Call the helper function to handle the incoming request and process the image
-            processed_image_path = process_metadata_overlay(curr_image, curr_form, app.config['UPLOAD_FOLDER'])
+    items = []
+    for index, saved_item in enumerate(saved_items):
+        image_payload = payload.images[index]
+        items.append(
+            {
+                **saved_item,
+                "form": image_payload.as_form(),
+            }
+        )
 
-            if not processed_image_path:
-                print("No processed image path returned for file:", curr_image.filename)
-                continue
-            
-            # Store the processed image in session for the results page
-            if 'processed_image_urls' not in session:
-                session['processed_image_urls'] = []
-                session['processed_image_filenames'] = []
+    logger.info("Submitting metadata job_id=%s items=%s source=batch", job["id"], len(items))
+    job_queue.submit_metadata_job(job["id"], str(job_folder), items)
+    created_job = job_queue.refresh_job(job["id"]) or job
+    return jsonify(serialize_job(created_job)), 202
 
-            session['processed_image_urls'].append(url_for('static', filename=f"uploads/{os.path.basename(processed_image_path)}"))
-            session['processed_image_filenames'].append(os.path.basename(processed_image_path))
 
-        except Exception as e:
-            print("Error during image processing for file", curr_image.filename, ":", e)
-            continue
+@app.post("/white-border")
+def white_border_endpoint():
+    if "images" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
 
-    if 'processed_image_urls' not in session or len(session['processed_image_urls']) == 0:
-        return redirect(session.get('last_referrer', url_for('upload_form')))
-    
-    return redirect(url_for('results_page'))
-                  
+    files = request.files.getlist("images")
+    if not files:
+        return jsonify({"error": "No file uploaded"}), 400
 
-        
+    try:
+        payload = parse_border_payload(request.form)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
-# Results page
-@app.route('/results')
-def results_page():
-    """
-    Renders the results page to display the processed image.
-    """
-    # Support multiple processed images (saved in session as lists)
-    processed_urls = session.get('processed_image_urls')
-    processed_filenames = session.get('processed_image_filenames')
+    job = job_store.create_job(job_type="border", source="border", total_items=len(files))
+    job_folder = create_job_folder(job["id"])
+    saved_items = save_uploaded_files(files, job_folder)
+    if not saved_items:
+        return jsonify({"error": "No valid files uploaded"}), 400
 
-    # Backwards compatibility: single image keys
-    if not processed_urls:
-        single_url = session.get('processed_image_url')
-        single_filename = session.get('processed_image_filename')
-        if single_url:
-            processed_urls = [single_url]
-            processed_filenames = [single_filename] if single_filename else [None]
+    logger.info(
+        "Submitting border job_id=%s items=%s border_size=%s aspect_ratio=%s",
+        job["id"],
+        len(saved_items),
+        payload.borderSize,
+        payload.aspectRatio,
+    )
+    job_queue.submit_border_job(job["id"], str(job_folder), saved_items, payload.borderSize, payload.aspectRatio)
+    created_job = job_queue.refresh_job(job["id"]) or job
+    return jsonify(serialize_job(created_job)), 202
 
-    if not processed_urls:
-        # Redirect to the upload page if no image was processed
-        referrer = request.referrer or ''
-        if 'border' in referrer:
-            return redirect(url_for('border_form'))
-        else:
-            return redirect(url_for('upload_form'))
 
-    print(f"Processed image URLs: {processed_urls}")
+@app.get("/api/jobs/<job_id>")
+def job_status(job_id: str):
+    job = job_queue.refresh_job(job_id)
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(serialize_job(job))
 
-    return render_template('results.html', image_urls=processed_urls, download_filenames=processed_filenames)
 
-# Route to download a single file from the results page
-@app.route('/download/<filename>')
-def download_file(filename):
-    """
-    Allows users to download the processed image file.
-    """
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=True)
+@app.get("/results")
+def legacy_results_page():
+    return redirect(url_for("home"))
 
-# Route to download all processed files as a zip
-@app.route('/download-all')
-def download_all_files():
-    """
-    Allows users to download all processed image files as a zip archive.
-    """
-    from io import BytesIO
-    import zipfile
 
-    processed_filenames = session.get('processed_image_filenames', [])
-    if not processed_filenames:
-        return redirect(url_for('results_page'))
+@app.get("/results/<job_id>")
+def results_page(job_id: str):
+    job = job_queue.refresh_job(job_id)
+    if job is None:
+        return redirect(url_for("home"))
 
-    # Create a zip in memory
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', compression=zipfile.ZIP_DEFLATED) as zip_file:
-        for filename in processed_filenames:
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            zip_file.write(file_path, arcname=filename)
-
-    zip_buffer.seek(0)
-
-    return send_file(
-        zip_buffer,
-        mimetype='application/zip',
-        as_attachment=True,
-        download_name='processed_images.zip'
+    preview_urls, image_urls, filenames = build_job_file_urls(job_id, job.get("outputs", []))
+    return render_template(
+        "results.html",
+        job_id=job_id,
+        initial_status=job["status"],
+        image_urls=preview_urls,
+        full_image_urls=image_urls,
+        download_filenames=filenames,
+        source=job.get("source", "metadata"),
     )
 
-# Cleanup the upload directory on exit
-atexit.register(cleanup_directory, UPLOAD_FOLDER)
 
-if __name__ == '__main__':
-    # Ensure template reloading is enabled
+@app.get("/download/<job_id>/<filename>")
+def download_file(job_id: str, filename: str):
+    job = job_store.load_job(job_id)
+    if job is None:
+        return redirect(url_for("home"))
+    return send_from_directory(str(STATIC_UPLOAD_ROOT / job_id), filename, as_attachment=True)
+
+
+@app.get("/download-all/<job_id>")
+def download_all_files(job_id: str):
+    job = job_store.load_job(job_id)
+    if job is None:
+        return redirect(url_for("home"))
+
+    outputs = job.get("outputs", [])
+    if not outputs:
+        return redirect(url_for("results_page", job_id=job_id))
+
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        for output in outputs:
+            filename = output["output_filename"]
+            file_path = STATIC_UPLOAD_ROOT / job_id / filename
+            if file_path.exists():
+                zip_file.write(file_path, arcname=filename)
+
+    zip_buffer.seek(0)
+    return send_file(
+        zip_buffer,
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=f"processed_images_{job_id}.zip",
+    )
+
+
+if __name__ == "__main__":
+    # Development vs production behavior is controlled by the DEV env var.
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-    server = Server(app.wsgi_app)
+    DEV_MODE = os.getenv("DEV", os.getenv("FLASK_ENV", "")).lower() in ("1", "true", "dev", "development")
+    HOST = os.getenv("HOST", "0.0.0.0")
+    PORT = int(os.getenv("PORT", 5000))
 
-    # Watch your templates and static files
-    server.watch('templates/*.html')
-    server.watch('templates/**/*.html')
-    server.watch('static/css/*.css')
-    server.watch('static/js/*.js')
-    server.watch('static/**/*.css')
-    server.watch('static/**/*.js')
-
-    # Run livereload
-    server.serve(host="127.0.0.1", debug=True, port=5000)
-
-
-
+    if DEV_MODE:
+        server = Server(app.wsgi_app)
+        server.watch("templates/*.html")
+        server.watch("templates/**/*.html")
+        server.watch("static/css/*.css")
+        server.watch("static/js/*.js")
+        server.watch("static/**/*.css")
+        server.watch("static/**/*.js")
+        server.serve(host=HOST, debug=os.getenv("FLASK_DEBUG", "true").lower() in ("1", "true"), port=PORT)
+    else:
+        # In production we expect a WSGI server (gunicorn/uWSGI) to run the app.
+        # Provide a minimal fallback if someone runs `python app.py` in prod.
+        app.run(host=HOST, port=PORT)
