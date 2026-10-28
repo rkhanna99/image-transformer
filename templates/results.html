@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     
     <!-- Link your existing styles -->
-    <link rel="stylesheet" href="../static/css/styles.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <style>
         /* Additional styling for results page */
         #resultContainer {
@@ -61,8 +61,15 @@
 
 
     <div class="container">
-        <div id="resultContainer" data-images='{{ (image_urls if image_urls is defined else [image_url]) | tojson }}' data-filenames='{{ (download_filenames if download_filenames is defined else [download_filename]) | tojson }}'>
+        <div id="resultContainer" data-job-id="{{ job_id }}" data-status="{{ initial_status }}" data-source="{{ source }}" data-images='{{ (image_urls if image_urls is defined else []) | tojson }}' data-filenames='{{ (download_filenames if download_filenames is defined else []) | tojson }}'>
             <h1 class="text-center mb-4">Transformed Image</h1>
+            <div id="jobStatusBanner" class="alert alert-secondary" role="status">Preparing job status...</div>
+            <div id="jobErrorBanner" class="alert alert-danger d-none" role="alert"></div>
+            <div id="jobLoading" class="mb-3">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
 
             <!-- Carousel image display -->
             <div class="mb-3 d-flex flex-column align-items-center">
@@ -90,6 +97,6 @@
 
     <!-- Add Bootstrap JS (Optional) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../static/js/results.js"></script>
+    <script src="{{ url_for('static', filename='js/results.js') }}"></script>
 </body>
 </html>

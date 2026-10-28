@@ -540,12 +540,20 @@ async function submitSingleImageForm(formElem) {
     if (loadingScreen) loadingScreen.style.display = "flex";
 
     const formData = new FormData(formElem);
+    const payload = {
+        address: formElem.querySelector('[name="address"]')?.value || null,
+        latitude: formElem.querySelector('[name="latitude"]')?.value || null,
+        longitude: formElem.querySelector('[name="longitude"]')?.value || null,
+        photoName: formElem.querySelector('[name="photoName"]')?.value || null,
+        aspectRatio: currentAspectRatio,
+        customAspectRatio: null,
+    };
 
-    formData.append("aspectRatio", currentAspectRatio);
     if (currentAspectRatio === 'Custom' || (/^\d+:\d+$/.test(currentAspectRatio) && customAspectInput && !customAspectInput.classList.contains('d-none'))) {
         const customValue = customAspectInput && customAspectInput.value ? customAspectInput.value : currentAspectRatio;
-        formData.append("customAspectRatio", customValue);
+        payload.customAspectRatio = customValue;
     }
+    formData.append("payload", JSON.stringify(payload));
 
     for (let pair of formData.entries()) {
         console.log(`${pair[0]}: ${pair[1]}`);
@@ -557,17 +565,15 @@ async function submitSingleImageForm(formElem) {
             body: formData,
         });
 
-        if (response.ok) {
-            // Let Flask serve the results page directly
-            window.location.href = "/results";
-        } else {
-            const error = await response.json();
-            alert(`Error: ${error.error}`);
-            if (loadingScreen) loadingScreen.style.display = "none";
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || "Unable to create job.");
         }
+
+        window.location.href = payload.results_page_url;
     } catch (error) {
         console.error("Error:", error);
-        alert("An unexpected error occurred.");
+        alert(error.message || "An unexpected error occurred.");
         if (loadingScreen) loadingScreen.style.display = "none";
     }
 }
@@ -578,6 +584,7 @@ async function submitMultiImageForm(formElem) {
     if (loadingScreen) loadingScreen.style.display = "flex";
 
     const formData = new FormData();
+    const payload = { images: [] };
 
     // Preserve any non per-image fields (e.g., CSRF)
     const baseFormData = new FormData(formElem);
@@ -605,7 +612,16 @@ async function submitMultiImageForm(formElem) {
         formData.append(`longitude[${idx}]`, longitude);
         formData.append(`photoName[${idx}]`, photoName);
         formData.append(`aspectRatio[${idx}]`, aspectRatio);
+        payload.images.push({
+            address,
+            latitude,
+            longitude,
+            photoName,
+            aspectRatio,
+            customAspectRatio: /^\d+:\d+$/.test(aspectRatio) && aspectRatio !== "Default" ? aspectRatio : null,
+        });
     });
+    formData.append("payload", JSON.stringify(payload));
 
     // Debug log
     for (let pair of formData.entries()) {
@@ -613,23 +629,20 @@ async function submitMultiImageForm(formElem) {
     }
 
     try {
-        // Adjust the URL and response handling to match your multi-image API
         const response = await fetch("/process-images", {
             method: "POST",
             body: formData,
         });
 
-        if (response.ok) {
-            // Let Flask serve the results page directly
-            window.location.href = "/results";
-        } else {
-            const error = await response.json();
-            alert(`Error: ${error.error || "Unknown error"}`);
-            if (loadingScreen) loadingScreen.style.display = "none";
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || "Unable to create job.");
         }
+
+        window.location.href = payload.results_page_url;
     } catch (error) {
         console.error("Error:", error);
-        alert("An unexpected error occurred.");
+        alert(error.message || "An unexpected error occurred.");
         if (loadingScreen) loadingScreen.style.display = "none";
     }
 }

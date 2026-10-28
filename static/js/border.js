@@ -541,14 +541,15 @@ if (borderForm) {
             formData.append('images', f, f.name);
         });
 
-        formData.append('borderSize', borderSlider ? borderSlider.value : 0);
-
         // Add aspect ratio to form data (shared for all images)
         let aspectValue = currentAspectRatio;
         if (aspectValue === 'Custom' && customAspectInput && customAspectInput.value && !customAspectInput.classList.contains('is-invalid')) {
             aspectValue = customAspectInput.value;
         }
-        formData.append('aspectRatio', aspectValue);
+        formData.append('payload', JSON.stringify({
+            borderSize: borderSlider ? Number(borderSlider.value) : 0,
+            aspectRatio: aspectValue
+        }));
 
         // Log the form data being sent
         for (let pair of formData.entries()) {
@@ -565,43 +566,15 @@ if (borderForm) {
                 body: formData
             });
 
-            // Check if response is JSON or HTML redirect
-            const contentType = response.headers.get('content-type');
-            
-            if (contentType && contentType.includes('application/json')) {
-                // Handle JSON response (success or error)
-                const data = await response.json();
-                
-                if (!response.ok) {
-                    throw new Error(data.error || 'Failed to process border');
-                }
-
-                if (data.processed_image_url) {
-                    // Hide canvas and show the processed image
-                    previewCanvas.classList.add('d-none');
-                    previewImage.src = data.processed_image_url;
-                    previewImage.classList.remove('d-none');
-                }
-            } else {
-                // Handle HTML response (redirect)
-                // The server is redirecting us, so we should follow the redirect
-                const redirectUrl = response.url;
-                if (redirectUrl) {
-                    window.location.href = redirectUrl;
-                } else {
-                    // If no redirect URL, try to parse the response as text
-                    const text = await response.text();
-                    if (text.includes('results_page')) {
-                        // If the HTML contains results page, redirect to results
-                        window.location.href = '/results';
-                    } else {
-                        throw new Error('Unexpected response from server');
-                    }
-                }
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to process border');
             }
+
+            window.location.href = data.results_page_url;
         } catch (err) {
             console.error("Form submission error:", err);
-            alert("Something went wrong while processing the border.");
+            alert(err.message || "Something went wrong while processing the border.");
         } finally {
             // Hide loading
             const loadingScreen = document.getElementById('loadingScreen');
