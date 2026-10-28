@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Palette Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.7/dist/lux/bootstrap.rtl.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <a class="navbar-brand" href="{{ url_for('home') }}">
+            <i class="bi bi-image"></i> Image Processing Toolkit
+        </a>
+    </nav>
+
+    <div class="container">
+        <h1 class="text-center mb-4">Color Palette Generator</h1>
+        <p class="text-muted">Upload an image and choose how many dominant colors to extract. Download the result as a PNG of square color tiles, ordered from most to least frequent.</p>
+        <p class="text-muted">Fully transparent pixels are ignored. Images with fewer colors than requested will produce fewer tiles.</p>
+
+        {% if error %}
+        <div class="alert alert-danger" role="alert">{{ error }}</div>
+        {% endif %}
+
+        <form action="{{ url_for('palette_form') }}" method="post" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="image" class="form-label">Image</label>
+                <input type="file" id="image" name="image" class="form-control" accept="image/*" required>
+            </div>
+            <div class="mb-3">
+                <label for="numColors" class="form-label">Number of colors (1–32)</label>
+                <input type="number" id="numColors" name="num_colors" class="form-control" min="1" max="32" step="1" value="{{ num_colors }}" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Generate Palette</button>
+        </form>
+    </div>
+</body>
+</html>

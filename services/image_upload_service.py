@@ -4,7 +4,39 @@ from processing_scripts.image_transformer import process_image
 from processing_scripts.helpers import *
 from livereload import Server
 import os, atexit, math, uuid, zlib
+import numpy as np
 from PIL import Image, ImageOps
+
+
+def process_color_palette(file, num_colors, upload_folder):
+    """Extract dominant colors and save them as a row of square tiles."""
+    with Image.open(file.stream) as image:
+        image = image.convert('RGBA')
+        image.thumbnail((256, 256))
+        pixels = np.asarray(image)
+        # Hidden RGB values in transparent backgrounds must not count as colors.
+        visible_pixels = pixels[pixels[:, :, 3] > 0, :3]
+
+    if len(visible_pixels) == 0:
+        raise ValueError('The image has no visible pixels.')
+
+    # Small or flat-color images may contain fewer colors than requested.
+    palette_size = min(num_colors, len(np.unique(visible_pixels, axis=0)))
+    palette = extract_colors(
+        image=visible_pixels.reshape(-1, 1, 3),
+        palette_size=palette_size,
+        resize=False,
+        sort_mode='frequency',
+    )
+
+    filename = f"palette_{uuid.uuid4().hex}"
+    output_path = os.path.join(upload_folder, filename)
+    local_display(
+        palette, w=200, h=200, save_to_file=True,
+        filename=output_path, extension='png',
+    )
+    return f"{output_path}.png"
+
 
 '''
 Metadata overlay method (API will call this function directly)

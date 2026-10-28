@@ -7,6 +7,8 @@ Flask app for batch-friendly photo transformations: metadata overlays, palette b
 - Multi-image white-border generator with aspect ratio padding.
 - Batch uploads with per-image options.
 - Palette extraction (7-color bar) appended to output.
+- Standalone color palette generator: choose 1–32 dominant colors and download square tiles as a PNG.
+  Fully transparent pixels are ignored; images with fewer colors produce fewer tiles.
 - Single or bulk ZIP downloads.
 - Live-reload development server.
 
@@ -40,6 +42,7 @@ If you prefer a fixed port, change it to `"5000:5000"` in `docker-compose.yml`.
 - `/` is the tool chooser.
 - `/metadata` uploads images for metadata overlays.
 - `/border` uploads images for white borders.
+- `/palette` uploads an image and a color count for a standalone palette.
 - Results render in `/results` with single or bulk download options.
 
 ## Project layout
@@ -48,7 +51,7 @@ If you prefer a fixed port, change it to `"5000:5000"` in `docker-compose.yml`.
 - `services/` - Upload + processing orchestration.
 - `templates/` - HTML views.
 - `static/` - JS/CSS and runtime uploads.
-- `tests/` - Experimental scripts (not a full test suite).
+- `tests/` - Palette regression tests and experimental scripts.
 
 ## Configuration notes
 - Uploads are stored in `static/uploads` and cleaned on startup and exit.
@@ -63,7 +66,8 @@ If you prefer a fixed port, change it to `"5000:5000"` in `docker-compose.yml`.
 ## Known limitations
 - EXIF can be missing or incomplete; some metadata fields may be blank.
 - Long-running batch processing is synchronous and can be slow for large sets.
-- Tests are not automated; add a test harness if you need CI.
+- Run palette regression tests with `python -m unittest discover -s tests -p test_color_palette.py`.
+  Other test scripts require local images or network access; CI is not configured.
 
 ## Improvement backlog
 See `project_notes/1-2-26_notes.md` for ideas and known gaps.

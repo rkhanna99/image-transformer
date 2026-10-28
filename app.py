@@ -2,10 +2,10 @@ from flask import Flask, render_template, request, redirect, url_for, jsonify, s
 from werkzeug.utils import secure_filename
 from processing_scripts.image_transformer import process_image
 from processing_scripts.helpers import *
-from services.image_upload_service import process_metadata_overlay
+from services.image_upload_service import process_metadata_overlay, process_color_palette
 from livereload import Server
 import os, atexit, math, uuid, zlib
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 app.secret_key = "your_secret_key"  # Needed for session management
@@ -37,6 +37,41 @@ def upload_form():
 @app.route('/border')
 def border_form():
     return render_template('border.html')
+
+
+@app.route('/palette', methods=['GET', 'POST'])
+def palette_form():
+    if request.method == 'GET':
+        return render_template('palette.html', num_colors=7)
+
+    num_colors = request.form.get('num_colors', '')
+
+    def form_error(message):
+        return render_template('palette.html', error=message, num_colors=num_colors), 400
+
+    try:
+        num_colors = int(num_colors)
+    except ValueError:
+        return form_error('Choose a whole number of colors between 1 and 32.')
+    if not 1 <= num_colors <= 32:
+        return form_error('Choose a whole number of colors between 1 and 32.')
+
+    image = request.files.get('image')
+    if not image or not image.filename:
+        return form_error('Please select an image.')
+
+    try:
+        output_path = process_color_palette(image, num_colors, app.config['UPLOAD_FOLDER'])
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        return form_error('Unable to read this image. Please upload a valid, supported image file.')
+
+    filename = os.path.basename(output_path)
+    session.pop('processed_image_urls', None)
+    session.pop('processed_image_filenames', None)
+    session['processed_image_url'] = url_for('static', filename=f'uploads/{filename}')
+    session['processed_image_filename'] = filename
+    return redirect(url_for('results_page'))
+
 
 # White border route
 @app.route('/white-border', methods=['POST'])
