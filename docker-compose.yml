@@ -4,6 +4,7 @@ services:
   image-transformer:
     image: image-transformer
     build: .
+    command: ["python", "app.py"]
     container_name: image_transformer
     ports:
       - "55000:5000" # Map host port 55000 to container 5000 for local/dev access
@@ -14,4 +15,4 @@ services:
       - DEV=1
       - FLASK_DEBUG=1
     restart: unless-stopped
-  
+

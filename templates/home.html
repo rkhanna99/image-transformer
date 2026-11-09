@@ -120,6 +120,26 @@
                 </div>
             </div>
 
+            <!-- QR Code Generator Tool Card -->
+            <div class="col-md-4 mb-4">
+                <div class="card shadow border-0 h-100 tool-card"
+                     data-nav-target="{{ url_for('qr_code_form') }}">
+                    <div class="card-body d-flex flex-column">
+                        <h3 class="card-title mb-3">
+                            <i class="bi bi-qr-code me-2"></i> QR Code Generator
+                        </h3>
+                        <p class="card-text flex-grow-1">
+                            Create a scannable QR code for any web link, with optional colors
+                            selected from a reference image.
+                        </p>
+                        <a href="{{ url_for('qr_code_form') }}"
+                           class="btn btn-primary btn-lg mt-3 w-100 route-link">
+                            Open QR Code Generator
+                        </a>
+                    </div>
+                </div>
+            </div>
+
         </div>
 
     </div>

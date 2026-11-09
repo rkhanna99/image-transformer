@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 from livereload import Server
 import os
 from io import BytesIO
@@ -10,6 +11,7 @@ from PIL import Image, UnidentifiedImageError
 
 from services.image_upload_service import process_color_palette
 from services.job_queue import JobQueue, JobStore
+from services.qr_code_service import MAX_REFERENCE_BYTES, generate_qr_code
 from services.request_payloads import parse_batch_metadata_payload, parse_border_payload, parse_single_metadata_payload
 
 
@@ -137,6 +139,45 @@ def palette_form():
         }],
     )
     return redirect(url_for('results_page', job_id=job["id"]))
+
+
+@app.get('/qr-code')
+def qr_code_form():
+    return render_template('qr_code.html')
+
+
+@app.post('/api/qr-code')
+def qr_code_endpoint():
+    try:
+        request.max_content_length = MAX_REFERENCE_BYTES + 128 * 1024
+    except AttributeError:
+        # Older Werkzeug versions cannot set a per-request body limit.
+        pass
+    # Check the multipart envelope before Werkzeug parses the uploaded body.
+    if request.content_length is not None and request.content_length > MAX_REFERENCE_BYTES + 128 * 1024:
+        return jsonify({"error": "Reference images must be 10 MB or smaller."}), 413
+
+    try:
+        reference_image = request.files.get('reference_image')
+        form = request.form
+    except RequestEntityTooLarge:
+        return jsonify({"error": "Reference images must be 10 MB or smaller."}), 413
+
+    if reference_image and not reference_image.filename:
+        reference_image = None
+
+    try:
+        result = generate_qr_code(
+            destination_url=form.get('url'),
+            reference_image=reference_image,
+            foreground=form.get('foreground'),
+            background=form.get('background'),
+            export_format=form.get('format'),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(result)
 
 
 @app.post("/process-image")
@@ -313,6 +354,7 @@ if __name__ == "__main__":
     PORT = int(os.getenv("PORT", 5000))
 
     if DEV_MODE:
+        logger.info("Starting development server with live reload enabled")
         server = Server(app.wsgi_app)
         server.watch("templates/*.html")
         server.watch("templates/**/*.html")
@@ -324,4 +366,5 @@ if __name__ == "__main__":
     else:
         # In production we expect a WSGI server (gunicorn/uWSGI) to run the app.
         # Provide a minimal fallback if someone runs `python app.py` in prod.
+        logger.info("Starting Flask server with live reload disabled; set DEV=1 to enable live reload")
         app.run(host=HOST, port=PORT)

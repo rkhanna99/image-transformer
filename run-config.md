@@ -10,10 +10,18 @@ Development (local / with live reload)
   python -m venv venv
   source venv/bin/activate
   pip install -r requirements.txt
+  DEV=1 python app.py
+  ```
+
+  On Windows PowerShell, use:
+
+  ```powershell
+  .\venv\Scripts\Activate.ps1
+  $env:DEV = "1"
   python app.py
   ```
 
-  The app honors the `DEV` environment variable. By default `app.py` runs livereload when `DEV=1` or `FLASK_ENV=development`.
+  The app enables live reload when `DEV=1` or, when `DEV` is unset, `FLASK_ENV=development`. With neither set, `python app.py` starts the regular Flask server. Startup logs identify the active mode. Hard refresh open app tabs after switching modes to remove any previous live-reload client.
 
 - Using Docker (development):
 
@@ -24,7 +32,7 @@ Development (local / with live reload)
   # then open http://localhost:55000
   ```
 
-  - The compose file sets `DEV=1` so the livereload server is used inside the container.
+  - The development compose file sets `DEV=1` and runs `python app.py` so the live-reload server is used inside the container. The production override explicitly runs Gunicorn.
 
 Production (recommended)
 

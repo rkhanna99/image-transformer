@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.7/dist/lux/bootstrap.rtl.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        .qr-preview {
+            display: block;
+            width: min(100%, 420px);
+            height: auto;
+            aspect-ratio: 1;
+            margin: 0 auto;
+            border: 1px solid #adb5bd;
+            background: #fff;
+            image-rendering: pixelated;
+        }
+        .qr-customization {
+            text-align: start;
+        }
+        .qr-color-heading {
+            display: flex;
+            align-items: center;
+            gap: .875rem;
+            margin-bottom: .75rem;
+        }
+        .qr-color-heading .qr-color-input {
+            flex: 0 0 3rem;
+            width: 3rem;
+            height: 2.75rem;
+            margin: 0;
+        }
+        .qr-color-palette {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .625rem;
+            padding: .25rem;
+        }
+        .qr-palette-chip {
+            flex: 0 0 2rem;
+            width: 2rem;
+            height: 2rem;
+            padding: 0;
+            border: 1px solid rgba(0, 0, 0, .3);
+            border-radius: .2rem;
+            cursor: pointer;
+        }
+        .qr-palette-chip[aria-pressed="true"] {
+            outline: 2px solid #212529;
+            outline-offset: 2px;
+        }
+        .qr-palette-chip:focus-visible {
+            outline: 3px solid #0d6efd;
+            outline-offset: 2px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <a class="navbar-brand" href="{{ url_for('home') }}">
+            <i class="bi bi-image"></i> Image Processing Toolkit
+        </a>
+    </nav>
+
+    <main class="container">
+        <h1 class="text-center mb-3">QR Code Generator</h1>
+        <p class="text-muted">Create a QR code for any web link. A reference image can supply colors, but it is never included in the code or sent to the destination.</p>
+
+        <form id="qrForm" enctype="multipart/form-data" novalidate>
+            <div class="mb-3">
+                <label for="destinationUrl" class="form-label">Destination URL</label>
+                <input id="destinationUrl" name="url" type="url" class="form-control" placeholder="https://example.com/page" autocomplete="url" required>
+                <div class="form-text">Use an absolute HTTP or HTTPS address.</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="referenceImage" class="form-label">Reference image <span class="text-muted">(optional)</span></label>
+                <input id="referenceImage" name="reference_image" type="file" class="form-control" accept="image/*">
+                <div class="form-text">Dominant colors will be used when they provide strong contrast. Maximum 10 MB and 25 megapixels.</div>
+            </div>
+
+            <div class="mb-3">
+                <label for="exportFormat" class="form-label">Export format</label>
+                <select id="exportFormat" name="format" class="form-select">
+                    <option value="png" selected>PNG (recommended)</option>
+                    <option value="jpeg">JPEG</option>
+                </select>
+            </div>
+
+            <button id="generateButton" type="submit" class="btn btn-primary w-100">Generate QR code</button>
+        </form>
+
+        <div id="qrError" class="alert alert-danger mt-3 d-none" role="alert"></div>
+        <p id="qrStatus" class="small text-muted mt-3" aria-live="polite"></p>
+
+        <section id="qrResult" class="card shadow-sm mt-3 d-none" aria-labelledby="qrResultTitle">
+            <div class="card-body text-center">
+                <h2 id="qrResultTitle" class="h4">Your QR code</h2>
+                <p id="qrDestination" class="small text-break mb-3"></p>
+                <img id="qrPreview" class="qr-preview" alt="Generated QR code">
+
+                <form id="qrColorForm" class="qr-customization mt-4" novalidate aria-labelledby="qrColorTitle">
+                    <h3 id="qrColorTitle" class="h5">Customize colors</h3>
+                    <p id="qrColorHelp" class="small text-muted">Open a color picker or choose an image palette swatch, then apply your colors. The foreground must be darker and the pair must meet 7:1 contrast.</p>
+                    <fieldset id="qrColorControls" aria-describedby="qrColorHelp">
+                        <legend class="visually-hidden">QR code colors</legend>
+                        <div class="row g-3">
+                            <div class="col-sm-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="qr-color-heading">
+                                        <input id="foreground" name="foreground" type="color" class="form-control form-control-color qr-color-input" value="#000000">
+                                        <div>
+                                            <label for="foreground" class="fw-bold mb-0">Foreground</label>
+                                            <output id="foregroundValue" for="foreground" class="small text-muted d-block">#000000</output>
+                                        </div>
+                                    </div>
+                                    <div class="qr-palette-options d-none">
+                                        <p class="small text-muted mb-2">Image palette</p>
+                                        <div id="foregroundPalette" class="qr-color-palette" role="group" aria-label="Foreground image palette"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="qr-color-heading">
+                                        <input id="background" name="background" type="color" class="form-control form-control-color qr-color-input" value="#ffffff">
+                                        <div>
+                                            <label for="background" class="fw-bold mb-0">Background</label>
+                                            <output id="backgroundValue" for="background" class="small text-muted d-block">#FFFFFF</output>
+                                        </div>
+                                    </div>
+                                    <div class="qr-palette-options d-none">
+                                        <p class="small text-muted mb-2">Image palette</p>
+                                        <div id="backgroundPalette" class="qr-color-palette" role="group" aria-label="Background image palette"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <div id="qrColorError" class="alert alert-danger mt-3 d-none" role="alert"></div>
+                    <p id="qrColorStatus" class="small text-muted mt-3 mb-2" aria-live="polite"></p>
+                    <div class="d-flex flex-wrap gap-2 mb-4">
+                        <button id="applyColorsButton" type="submit" class="btn btn-primary" disabled>Apply colors</button>
+                        <button id="resetColorsButton" type="button" class="btn btn-outline-primary" disabled>Reset colors</button>
+                    </div>
+                </form>
+                <p id="qrNotice" class="small text-muted d-none mb-2"></p>
+                <p class="small text-muted">Keep the border around the code, then scan it at the final poster size before printing.</p>
+                <a id="downloadLink" class="btn btn-success disabled" aria-disabled="true" tabindex="-1">Download QR code</a>
+            </div>
+        </section>
+    </main>
+    <script src="{{ url_for('static', filename='js/qr_code.js') }}"></script>
+</body>
+</html>

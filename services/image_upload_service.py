@@ -8,26 +8,39 @@ import numpy as np
 from PIL import Image, ImageOps
 
 
-def process_color_palette(file, num_colors, upload_folder):
-    """Extract dominant colors and save them as a row of square tiles."""
-    with Image.open(file.stream) as image:
-        image = image.convert('RGBA')
-        image.thumbnail((256, 256))
-        pixels = np.asarray(image)
-        # Hidden RGB values in transparent backgrounds must not count as colors.
-        visible_pixels = pixels[pixels[:, :, 3] > 0, :3]
+def extract_dominant_palette(image, num_colors=7):
+    """Return the existing Pylette palette for an already-open PIL image."""
+    image = ImageOps.exif_transpose(image).convert('RGBA')
+    image.thumbnail((256, 256))
+    pixels = np.asarray(image)
+    # Hidden RGB values in transparent backgrounds must not count as colors.
+    visible_pixels = pixels[pixels[:, :, 3] > 0, :3]
 
     if len(visible_pixels) == 0:
         raise ValueError('The image has no visible pixels.')
 
-    # Small or flat-color images may contain fewer colors than requested.
     palette_size = min(num_colors, len(np.unique(visible_pixels, axis=0)))
-    palette = extract_colors(
+    return extract_colors(
         image=visible_pixels.reshape(-1, 1, 3),
         palette_size=palette_size,
         resize=False,
         sort_mode='frequency',
     )
+
+
+def palette_color_samples(palette):
+    """Return RGB/frequency pairs from a Pylette palette."""
+    samples = []
+    for color in palette.colors:
+        rgb = tuple(int(channel) for channel in color.rgb)
+        samples.append((rgb, float(getattr(color, 'freq', 0.0))))
+    return samples
+
+
+def process_color_palette(file, num_colors, upload_folder):
+    """Extract dominant colors and save them as a row of square tiles."""
+    with Image.open(file.stream) as image:
+        palette = extract_dominant_palette(image, num_colors)
 
     filename = f"palette_{uuid.uuid4().hex}"
     output_path = os.path.join(upload_folder, filename)

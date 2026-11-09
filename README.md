@@ -6,6 +6,7 @@ Flask app for batch-friendly photo transformations: metadata overlays, palette b
 - Metadata overlay generator (camera/lens/settings/GPS + custom photo name).
 - Multi-image white-border generator with aspect ratio padding.
 - Batch uploads with per-image options.
+- Palette-aware QR code generator with optional manual colors and PNG/JPEG export.
 - Palette extraction (7-color bar) appended to output.
 - Standalone color palette generator: choose 1–32 dominant colors and download square tiles as a PNG.
   Fully transparent pixels are ignored; images with fewer colors produce fewer tiles.
@@ -20,12 +21,15 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-2) Run the app:
-```bash
+2) Run the app with live reload (PowerShell):
+```powershell
+$env:DEV = "1"
 python app.py
 ```
 
 3) Open `http://127.0.0.1:5000`.
+
+For a regular local server without live reload, set `$env:DEV = "0"` before starting. Hard refresh open browser tabs after switching modes so they use the current server's reload settings.
 
 ## Docker
 ```bash
@@ -40,6 +44,7 @@ Open `http://localhost:55000`. See `run-config.md` for production settings.
 - `/metadata` uploads images for metadata overlays.
 - `/border` uploads images for white borders.
 - `/palette` uploads an image and a color count for a standalone palette.
+- `/qr-code` creates a QR code for an HTTP(S) URL; its optional reference image supplies colors only.
 - Metadata and border upload endpoints create background jobs and return a `job_id`.
 - The palette form generates its output directly and redirects to the completed job's results.
 - Results render in `/results/<job_id>` and poll `/api/jobs/<job_id>` until processing completes.
@@ -86,6 +91,11 @@ The preferred contract is a `payload` form field containing JSON.
 
 The legacy flat form fields are still accepted as a fallback.
 
+## QR code generator
+Open `/qr-code`, enter an HTTP(S) destination, and optionally choose a reference image. The image is used only to extract dominant colors and is never included in the encoded URL or sent to the destination. Automatic color pairs use a conservative 7:1 contrast threshold; if the image palette cannot provide one, the tool uses black on white. PNG is the default export, with JPEG also available. Reference images are limited to 10 MB and 25 megapixels.
+
+After generating, use **Customize colors** below the preview to pick foreground and background colors from the image palette or the color pickers. Click **Apply colors** to update the preview and download together. **Reset colors** restores the original generated pair for you to apply again. Downloads are disabled while edits are unapplied. Changing the destination, reference image, or format requires generating again before customizing.
+
 ## Project layout
 - `app.py` - Flask entrypoint and routes.
 - `processing_scripts/` - Core image processing pipeline and helpers.
@@ -112,6 +122,10 @@ The legacy flat form fields are still accepted as a fallback.
 - Uploaded files still live on the web node filesystem; move to object storage for production.
 - Run palette regression tests with `python -m unittest discover -s tests -p test_color_palette.py`.
   Other test scripts require local images or network access; CI is not configured.
+
+## Troubleshooting
+- A Joblib physical-core warning on Windows can appear the first time an image palette is extracted in a server process (including a QR code with a reference image). Older Joblib versions try to run `wmic`, which may be unavailable. This project pins Joblib 1.5.3, which uses PowerShell CPU detection. Run `python -m pip install -r requirements.txt` and restart the server after updating dependencies.
+- Repeated `GET /livereload` 404s mean a browser reload client is contacting a server without the live-reload endpoint. Start with `DEV=1` for live reload, or hard refresh all open app tabs after starting with `DEV=0`. The QR generation response is separate from these reload requests.
 
 ## Improvement backlog
 See `project_notes/1-2-26_notes.md` for ideas and known gaps.
