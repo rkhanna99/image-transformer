@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from app import app
-from services.qr_code_service import MAX_REFERENCE_BYTES, choose_qr_colors, contrast_ratio
+from services.qr_code_service import MAX_REFERENCE_BYTES
 
 try:
     import cv2
@@ -69,6 +69,9 @@ class TestQrCode(unittest.TestCase):
         self.assertEqual((image.width, image.height), (payload['width'], payload['height']))
         self.assertEqual(payload['filename'], 'qr-code.png')
         self.assertIsNone(payload['notice'])
+        self.assertIsNone(payload['warning'])
+        self.assertEqual(payload['contrast_ratio'], 21.0)
+        self.assertFalse(payload['transparent_background'])
         self.assert_decodes(image_data, destination)
 
     def test_palette_pair_is_selected_and_decodes(self):
@@ -143,14 +146,17 @@ class TestQrCode(unittest.TestCase):
         self.assertEqual(payload['color_source'], 'manual')
         self.assertEqual((payload['foreground'], payload['background']), ('#000000', '#FFFFFF'))
 
-    def test_one_manual_color_uses_default_or_rejects_an_unusable_pair(self):
+    def test_one_manual_color_uses_default_and_warns_for_low_contrast(self):
         response = self.post_qr({'url': 'https://example.com', 'background': '#FFFFFF'})
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual((payload['foreground'], payload['background']), ('#000000', '#FFFFFF'))
 
-        invalid = self.post_qr({'url': 'https://example.com', 'foreground': '#FFFFFF'})
-        self.assertEqual(invalid.status_code, 400)
+        low_contrast = self.post_qr({'url': 'https://example.com', 'foreground': '#FFFFFF'})
+        self.assertEqual(low_contrast.status_code, 200)
+        self.assertEqual(low_contrast.get_json()['foreground'], '#FFFFFF')
+        self.assertEqual(low_contrast.get_json()['background'], '#FFFFFF')
+        self.assertIn('Low contrast', low_contrast.get_json()['warning'])
 
     def test_reference_image_byte_limit_is_enforced(self):
         oversized = BytesIO(b'x' * (MAX_REFERENCE_BYTES + 1))
@@ -161,16 +167,63 @@ class TestQrCode(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('10 MB', response.get_json()['error'])
 
-    def test_low_contrast_and_reversed_manual_pairs_are_rejected(self):
-        for foreground, background in [('#777777', '#FFFFFF'), ('#FFFFFF', '#000000')]:
+    def test_low_contrast_and_reversed_manual_pairs_are_preserved_with_warnings(self):
+        for foreground, background in [('#777777', '#FFFFFF'), ('#FFFFFF', '#000000'), ('#123456', '#123456')]:
             with self.subTest(foreground=foreground, background=background):
                 response = self.post_qr({
                     'url': 'https://example.com',
                     'foreground': foreground,
                     'background': background,
                 })
-                self.assertEqual(response.status_code, 400)
-                self.assertIn('7:1', response.get_json()['error'])
+                self.assertEqual(response.status_code, 200)
+                payload = response.get_json()
+                self.assertEqual((payload['foreground'], payload['background']), (foreground, background))
+                self.assertTrue(payload['warning'])
+                image, _ = self.image_from_response(payload)
+                self.assertEqual(image.getpixel((0, 0)), tuple(bytes.fromhex(background[1:])))
+                self.assertEqual(image.getpixel((64, 64)), tuple(bytes.fromhex(foreground[1:])))
+
+    def test_transparent_png_has_clear_background_opaque_modules_and_decodes_on_white(self):
+        destination = 'https://example.com/Pokemon?form=2#details'
+        response = self.post_qr({
+            'url': destination,
+            'foreground': '#123456',
+            'background': '#123456',
+            'transparent_background': 'true',
+        })
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        image, _ = self.image_from_response(payload)
+        self.assertEqual((image.format, image.mode), ('PNG', 'RGBA'))
+        self.assertTrue(payload['transparent_background'])
+        self.assertEqual((image.width, image.height), (payload['width'], payload['height']))
+        self.assertEqual(image.getpixel((0, 0))[3], 0)
+        self.assertEqual(image.getpixel((64, 64)), (18, 52, 86, 255))
+        self.assertEqual(set(np.asarray(image)[:, :, 3].flat), {0, 255})
+        self.assertIsNone(payload['contrast_ratio'])
+        self.assertIn('surface behind', payload['warning'])
+        composite = Image.alpha_composite(Image.new('RGBA', image.size, 'white'), image).convert('RGB')
+        composite_buffer = BytesIO()
+        composite.save(composite_buffer, format='PNG')
+        self.assert_decodes(composite_buffer.getvalue(), destination)
+
+    def test_transparency_requires_png_and_valid_boolean(self):
+        jpeg = self.post_qr({
+            'url': 'https://example.com', 'format': 'jpeg', 'transparent_background': 'true',
+        })
+        self.assertEqual(jpeg.status_code, 400)
+        self.assertIn('require PNG', jpeg.get_json()['error'])
+        invalid = self.post_qr({
+            'url': 'https://example.com', 'transparent_background': 'maybe',
+        })
+        self.assertEqual(invalid.status_code, 400)
+
+        opaque = self.post_qr({
+            'url': 'https://example.com', 'format': 'jpeg', 'transparent_background': 'false',
+        })
+        self.assertEqual(opaque.status_code, 200)
+        self.assertEqual(self.image_from_response(opaque.get_json())[0].mode, 'RGB')
+        self.assertFalse(opaque.get_json()['transparent_background'])
 
     def test_invalid_url_format_corrupt_and_over_capacity_inputs_are_rejected(self):
         invalid_scheme = self.post_qr({'url': 'javascript:alert(1)'})
@@ -193,10 +246,10 @@ class TestQrCode(unittest.TestCase):
         self.assertEqual(too_long.status_code, 400)
         self.assertIn('too long', too_long.get_json()['error'])
 
-    def test_manual_pair_requires_seven_to_one_contrast(self):
-        with self.assertRaisesRegex(ValueError, '7:1'):
-            choose_qr_colors([], '#777777', '#FFFFFF')
-        self.assertGreaterEqual(contrast_ratio('#000000', '#FFFFFF'), 7)
+    def test_invalid_hex_color_is_still_rejected(self):
+        response = self.post_qr({'url': 'https://example.com', 'foreground': 'red'})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('hex color', response.get_json()['error'])
 
 
 if __name__ == '__main__':

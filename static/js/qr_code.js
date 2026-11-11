@@ -4,12 +4,15 @@
     const destinationUrl = document.getElementById('destinationUrl');
     const foreground = document.getElementById('foreground');
     const background = document.getElementById('background');
+    const transparentBackground = document.getElementById('transparentBackground');
+    const exportFormat = document.getElementById('exportFormat');
     const colorControls = document.getElementById('qrColorControls');
     const generateButton = document.getElementById('generateButton');
     const applyColorsButton = document.getElementById('applyColorsButton');
     const resetColorsButton = document.getElementById('resetColorsButton');
     const errorBox = document.getElementById('qrError');
     const colorError = document.getElementById('qrColorError');
+    const colorWarning = document.getElementById('qrColorWarning');
     const status = document.getElementById('qrStatus');
     const colorStatus = document.getElementById('qrColorStatus');
     const result = document.getElementById('qrResult');
@@ -24,10 +27,12 @@
     let currentAsset = null;
     let initialColors = null;
     let generatedFormat = 'png';
+    let transparentBackgroundSelected = false;
 
     function matchesColors(colors) {
         return colors && foreground.value.toUpperCase() === colors.foreground.toUpperCase()
-            && background.value.toUpperCase() === colors.background.toUpperCase();
+            && transparentBackgroundSelected === Boolean(colors.transparent_background)
+            && (transparentBackgroundSelected || background.value.toUpperCase() === colors.background.toUpperCase());
     }
 
     function hasCurrentGeneration() {
@@ -41,6 +46,10 @@
         generateButton.disabled = busy;
         generateButton.textContent = activeOperation === 'generate' ? 'Generating…' : 'Generate QR code';
         colorControls.disabled = busy || !current;
+        background.disabled = busy || !current;
+        document.querySelectorAll('#backgroundPalette button').forEach((chip) => {
+            chip.disabled = busy || !current;
+        });
         applyColorsButton.disabled = busy || !current || !colorsChanged;
         applyColorsButton.textContent = activeOperation === 'colors' ? 'Applying…' : 'Apply colors';
         resetColorsButton.disabled = busy || !current || matchesColors(initialColors);
@@ -60,18 +69,24 @@
 
     function updateColorLabels() {
         document.getElementById('foregroundValue').textContent = foreground.value.toUpperCase();
-        document.getElementById('backgroundValue').textContent = background.value.toUpperCase();
+        document.getElementById('backgroundValue').textContent = transparentBackgroundSelected ? 'Transparent' : background.value.toUpperCase();
+        document.getElementById('qrTransparencyHint').classList.toggle('d-none', !transparentBackgroundSelected);
+        transparentBackground.setAttribute('aria-pressed', String(transparentBackgroundSelected));
         for (const [role, input] of [['foreground', foreground], ['background', background]]) {
-            document.querySelectorAll(`#${role}Palette button`).forEach((chip) => {
-                chip.setAttribute('aria-pressed', String(chip.dataset.color === input.value.toUpperCase()));
+            document.querySelectorAll(`#${role}Palette button[data-color]`).forEach((chip) => {
+                const selected = chip.dataset.color === input.value.toUpperCase()
+                    && !(role === 'background' && transparentBackgroundSelected);
+                chip.setAttribute('aria-pressed', String(selected));
             });
         }
     }
 
-    function editColors() {
+    function editColors(event) {
         if (!hasCurrentGeneration()) return;
+        if (event && event.target === background) transparentBackgroundSelected = false;
         colorError.classList.add('d-none');
         updateColorLabels();
+        showColorWarning(matchesColors(currentAsset) ? currentAsset.warning : null);
         colorStatus.textContent = matchesColors(currentAsset)
             ? '' : 'Colors changed. Apply colors to update the preview and enable download.';
         updateControls();
@@ -81,6 +96,7 @@
         revision += 1;
         errorBox.classList.add('d-none');
         colorError.classList.add('d-none');
+        showColorWarning(null);
         if (currentAsset || activeOperation) {
             status.textContent = 'Inputs changed. Generate again to refresh the preview and enable download.';
             colorStatus.textContent = 'Generate again before customizing this QR code.';
@@ -92,8 +108,13 @@
     form.addEventListener('change', invalidateGeneration);
     colorForm.addEventListener('input', editColors);
     colorForm.addEventListener('change', editColors);
+    transparentBackground.addEventListener('click', () => {
+        if (!hasCurrentGeneration() || activeOperation) return;
+        transparentBackgroundSelected = true;
+        editColors();
+    });
 
-    function renderPalette(colors) {
+    function renderPalette(colors, backgroundColor) {
         const palette = [...new Set((colors || []).map((color) => color.toUpperCase()))];
         document.querySelectorAll('.qr-palette-options').forEach((element) => {
             element.classList.toggle('d-none', palette.length === 0);
@@ -101,7 +122,8 @@
         for (const [role, input] of [['foreground', foreground], ['background', background]]) {
             const container = document.getElementById(`${role}Palette`);
             container.replaceChildren();
-            palette.forEach((color) => {
+            const choices = role === 'background' ? [...new Set([backgroundColor.toUpperCase(), ...palette])] : palette;
+            choices.forEach((color) => {
                 const chip = document.createElement('button');
                 chip.type = 'button';
                 chip.className = 'qr-palette-chip';
@@ -111,11 +133,13 @@
                 chip.setAttribute('aria-label', `Use ${color} for ${role}`);
                 chip.setAttribute('aria-pressed', 'false');
                 chip.addEventListener('click', () => {
+                    if (role === 'background') transparentBackgroundSelected = false;
                     input.value = color;
                     editColors();
                 });
                 container.appendChild(chip);
             });
+            if (role === 'background') container.appendChild(transparentBackground);
         }
     }
 
@@ -126,10 +150,18 @@
         document.getElementById('qrDestination').textContent = payload.url;
         foreground.value = payload.foreground;
         background.value = payload.background;
+        transparentBackgroundSelected = Boolean(payload.transparent_background);
+        preview.classList.toggle('qr-preview-transparent', transparentBackgroundSelected);
         updateColorLabels();
+        showColorWarning(payload.warning);
         notice.textContent = payload.notice || '';
         notice.classList.toggle('d-none', !payload.notice);
         status.textContent = `${payload.width} × ${payload.height} pixels`;
+    }
+
+    function showColorWarning(message) {
+        colorWarning.textContent = message || '';
+        colorWarning.classList.toggle('d-none', !message);
     }
 
     async function generate(formData, operation) {
@@ -158,8 +190,15 @@
             if (operation === 'generate') {
                 generatedRevision = requestRevision;
                 generatedFormat = formData.get('format') || 'png';
-                initialColors = { foreground: payload.foreground, background: payload.background };
-                renderPalette(payload.palette);
+                initialColors = {
+                    foreground: payload.foreground,
+                    background: payload.background,
+                    transparent_background: Boolean(payload.transparent_background),
+                };
+                renderPalette(payload.palette, payload.background);
+            } else {
+                generatedFormat = payload.mime_type === 'image/jpeg' ? 'jpeg' : 'png';
+                exportFormat.value = generatedFormat;
             }
             renderAsset(payload);
             colorStatus.textContent = operation === 'colors' ? 'Colors applied. Your download matches this preview.' : '';
@@ -200,9 +239,10 @@
         // The extracted palette stays in the editor; explicit colors need no image upload.
         const formData = new FormData();
         formData.set('url', currentAsset.url);
-        formData.set('format', generatedFormat);
+        formData.set('format', transparentBackgroundSelected ? 'png' : generatedFormat);
         formData.set('foreground', foreground.value);
         formData.set('background', background.value);
+        formData.set('transparent_background', String(transparentBackgroundSelected));
         generate(formData, 'colors');
     });
 
@@ -210,6 +250,7 @@
         if (!hasCurrentGeneration() || activeOperation) return;
         foreground.value = initialColors.foreground;
         background.value = initialColors.background;
+        transparentBackgroundSelected = initialColors.transparent_background;
         editColors();
     });
 

@@ -143,7 +143,8 @@ def palette_form():
 
 @app.get('/qr-code')
 def qr_code_form():
-    return render_template('qr_code.html')
+    script_version = (PROJECT_ROOT / 'static' / 'js' / 'qr_code.js').stat().st_mtime_ns
+    return render_template('qr_code.html', qr_script_version=script_version)
 
 
 @app.post('/api/qr-code')
@@ -173,6 +174,7 @@ def qr_code_endpoint():
             foreground=form.get('foreground'),
             background=form.get('background'),
             export_format=form.get('format'),
+            transparent_background=form.get('transparent_background'),
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400

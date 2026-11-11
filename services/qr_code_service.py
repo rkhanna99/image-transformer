@@ -60,6 +60,17 @@ def normalize_hex_color(value: str | None, field_name: str) -> str | None:
     return value.upper()
 
 
+def normalize_transparency(value: bool | str | None) -> bool:
+    if value is None or isinstance(value, bool):
+        return bool(value)
+    if isinstance(value, str):
+        if value.lower() in {'true', '1', 'on'}:
+            return True
+        if value.lower() in {'false', '0', 'off', ''}:
+            return False
+    raise ValueError('Transparent background must be true or false.')
+
+
 def relative_luminance(color: str) -> float:
     channels = [int(color[index:index + 2], 16) / 255 for index in (1, 3, 5)]
     linear = [channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4 for channel in channels]
@@ -128,8 +139,6 @@ def choose_qr_colors(
     has_manual = foreground is not None or background is not None
 
     if foreground is not None and background is not None:
-        if relative_luminance(foreground) >= relative_luminance(background) or contrast_ratio(foreground, background) < CONTRAST_THRESHOLD:
-            raise ValueError('Choose a darker foreground and a background with at least 7:1 contrast.')
         return ColorSelection(foreground, background, 'manual', None)
 
     if not has_manual and not has_reference:
@@ -147,8 +156,6 @@ def choose_qr_colors(
         used_default = selected_background is None
         if selected_background is None:
             selected_background = '#FFFFFF'
-        if relative_luminance(foreground) >= relative_luminance(selected_background) or contrast_ratio(foreground, selected_background) < CONTRAST_THRESHOLD:
-            raise ValueError('The foreground color needs a lighter background with at least 7:1 contrast.')
         notice = MANUAL_NOTICE if has_reference and used_default else None
         return ColorSelection(foreground, selected_background, 'manual', notice)
 
@@ -156,8 +163,6 @@ def choose_qr_colors(
     used_default = selected_foreground is None
     if selected_foreground is None:
         selected_foreground = '#000000'
-    if relative_luminance(selected_foreground) >= relative_luminance(background) or contrast_ratio(selected_foreground, background) < CONTRAST_THRESHOLD:
-        raise ValueError('The background color needs a darker foreground with at least 7:1 contrast.')
     notice = MANUAL_NOTICE if has_reference and used_default else None
     return ColorSelection(selected_foreground, background, 'manual', notice)
 
@@ -197,6 +202,7 @@ def generate_qr_code(
     foreground: str | None = None,
     background: str | None = None,
     export_format: str | None = None,
+    transparent_background: bool | str | None = False,
 ) -> dict:
     destination_url = validate_destination_url(destination_url)
     foreground = normalize_hex_color(foreground, 'Foreground')
@@ -204,9 +210,20 @@ def generate_qr_code(
     export_format = (export_format or 'png').lower()
     if export_format not in {'png', 'jpeg'}:
         raise ValueError('Format must be PNG or JPEG.')
+    transparent_background = normalize_transparency(transparent_background)
+    if transparent_background and export_format != 'png':
+        raise ValueError('Transparent backgrounds require PNG format.')
 
     palette_samples = _read_reference_palette(reference_image)
     selection = choose_qr_colors(palette_samples, foreground, background, bool(reference_image))
+    ratio = None if transparent_background else contrast_ratio(selection.foreground, selection.background)
+    color_warning = None
+    if transparent_background:
+        color_warning = 'Transparent background: contrast depends on the surface behind the code. Scan it after placing it on your poster.'
+    elif ratio < CONTRAST_THRESHOLD:
+        color_warning = f'Low contrast ({ratio:.2f}:1; 7:1 recommended). This QR code may be difficult to scan.'
+    elif relative_luminance(selection.foreground) > relative_luminance(selection.background):
+        color_warning = 'A light foreground on a dark background can be harder to scan. Test this QR code before printing.'
 
     qr = qrcode.QRCode(
         version=None,
@@ -227,8 +244,8 @@ def generate_qr_code(
 
     image = qr.make_image(
         fill_color=selection.foreground,
-        back_color=selection.background,
-    ).get_image().convert('RGB')
+        back_color='transparent' if transparent_background else selection.background,
+    ).get_image().convert('RGBA' if transparent_background else 'RGB')
     width, height = image.size
     image_buffer = BytesIO()
     if export_format == 'png':
@@ -249,7 +266,11 @@ def generate_qr_code(
         'background': selection.background,
         'palette': [_to_hex(rgb) for rgb, _ in palette_samples],
         'color_source': selection.color_source,
-        'notice': selection.notice,
+        'notice': ('Used black foreground because the image palette did not provide enough contrast.'
+                   if transparent_background and selection.color_source == 'fallback' else selection.notice),
+        'transparent_background': transparent_background,
+        'contrast_ratio': round(ratio, 2) if ratio is not None else None,
+        'warning': color_warning,
         'width': width,
         'height': height,
     }

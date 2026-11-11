@@ -96,6 +96,10 @@ Open `/qr-code`, enter an HTTP(S) destination, and optionally choose a reference
 
 After generating, use **Customize colors** below the preview to pick foreground and background colors from the image palette or the color pickers. Click **Apply colors** to update the preview and download together. **Reset colors** restores the original generated pair for you to apply again. Downloads are disabled while edits are unapplied. Changing the destination, reference image, or format requires generating again before customizing.
 
+Select the **checkerboard swatch** in the background palette for an RGBA PNG with a clear background and opaque QR modules, then click **Apply colors**. Applying transparency switches a JPEG selection to PNG; JPEG cannot preserve transparency. The checkerboard appears only in the preview. Select a solid background swatch or use the background color picker to return to an opaque background. The transparency swatch is also available without a reference image.
+
+Manual color choices are always accepted when they are valid hex colors. Low contrast (below the recommended 7:1) or a light foreground on a dark background shows a warning without blocking generation or download. With transparency, contrast depends on the surface behind the code; test it on the final poster. The API accepts `transparent_background=true` for PNG and returns `transparent_background`, `contrast_ratio` (null for transparency), and an optional `warning` alongside the asset.
+
 ## Project layout
 - `app.py` - Flask entrypoint and routes.
 - `processing_scripts/` - Core image processing pipeline and helpers.
@@ -122,6 +126,7 @@ After generating, use **Customize colors** below the preview to pick foreground 
 - Uploaded files still live on the web node filesystem; move to object storage for production.
 - Run palette regression tests with `python -m unittest discover -s tests -p test_color_palette.py`.
   Other test scripts require local images or network access; CI is not configured.
+- Run the QR browser regression check with `node tests/qr_code_browser.cjs` (Node 22+ and Chrome). It checks native pointer selection and Apply, with and without an image palette. Set `CHROME_BIN` or `PYTHON` if the executables need explicit paths.
 
 ## Troubleshooting
 - A Joblib physical-core warning on Windows can appear the first time an image palette is extracted in a server process (including a QR code with a reference image). Older Joblib versions try to run `wmic`, which may be unavailable. This project pins Joblib 1.5.3, which uses PowerShell CPU detection. Run `python -m pip install -r requirements.txt` and restart the server after updating dependencies.

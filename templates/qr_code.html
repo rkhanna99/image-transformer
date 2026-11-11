@@ -18,6 +18,11 @@
             background: #fff;
             image-rendering: pixelated;
         }
+        .qr-preview-transparent, .qr-transparent-chip {
+            background-color: #fff;
+            background-image: conic-gradient(#e9ecef 25%, transparent 0 50%, #e9ecef 0 75%, transparent 0);
+            background-size: 20px 20px;
+        }
         .qr-customization {
             text-align: start;
         }
@@ -47,6 +52,9 @@
             border: 1px solid rgba(0, 0, 0, .3);
             border-radius: .2rem;
             cursor: pointer;
+        }
+        .qr-transparent-chip {
+            background-size: 12px 12px;
         }
         .qr-palette-chip[aria-pressed="true"] {
             outline: 2px solid #212529;
@@ -104,7 +112,7 @@
 
                 <form id="qrColorForm" class="qr-customization mt-4" novalidate aria-labelledby="qrColorTitle">
                     <h3 id="qrColorTitle" class="h5">Customize colors</h3>
-                    <p id="qrColorHelp" class="small text-muted">Open a color picker or choose an image palette swatch, then apply your colors. The foreground must be darker and the pair must meet 7:1 contrast.</p>
+                    <p id="qrColorHelp" class="small text-muted">Open a color picker or choose an image palette swatch, then apply your colors. A dark foreground on a light background usually scans best. Low contrast shows a warning and still allows download.</p>
                     <fieldset id="qrColorControls" aria-describedby="qrColorHelp">
                         <legend class="visually-hidden">QR code colors</legend>
                         <div class="row g-3">
@@ -132,14 +140,18 @@
                                             <output id="backgroundValue" for="background" class="small text-muted d-block">#FFFFFF</output>
                                         </div>
                                     </div>
-                                    <div class="qr-palette-options d-none">
-                                        <p class="small text-muted mb-2">Image palette</p>
-                                        <div id="backgroundPalette" class="qr-color-palette" role="group" aria-label="Background image palette"></div>
+                                    <div>
+                                        <p class="small text-muted mb-2">Background options</p>
+                                        <div id="backgroundPalette" class="qr-color-palette" role="group" aria-label="Background color options">
+                                            <button id="transparentBackground" type="button" class="qr-palette-chip qr-transparent-chip" title="Transparent background (PNG)" aria-label="Use transparent background" aria-pressed="false" aria-describedby="qrTransparencyHint"></button>
+                                        </div>
                                     </div>
+                                    <p id="qrTransparencyHint" class="small text-muted mt-2 mb-0 d-none">Transparency uses PNG. The checkerboard is only a preview and is not included in your download.</p>
                                 </div>
                             </div>
                         </div>
                     </fieldset>
+                    <div id="qrColorWarning" class="alert alert-warning mt-3 d-none" role="status" aria-live="polite"></div>
                     <div id="qrColorError" class="alert alert-danger mt-3 d-none" role="alert"></div>
                     <p id="qrColorStatus" class="small text-muted mt-3 mb-2" aria-live="polite"></p>
                     <div class="d-flex flex-wrap gap-2 mb-4">
@@ -153,6 +165,6 @@
             </div>
         </section>
     </main>
-    <script src="{{ url_for('static', filename='js/qr_code.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/qr_code.js', v=qr_script_version) }}"></script>
 </body>
 </html>
