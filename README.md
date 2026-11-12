@@ -47,6 +47,7 @@ Open `http://localhost:55000`. See `run-config.md` for production settings.
 - `/qr-code` creates a QR code for an HTTP(S) URL; its optional reference image supplies colors only.
 - Metadata and border upload endpoints create background jobs and return a `job_id`.
 - The palette form generates its output directly and redirects to the completed job's results.
+- Standalone and QR palettes group similar RGB shades from a thumbnail up to 256 pixels per side. Extraction tries ten deterministic K-means initializations, keeps the best fit, and orders swatches by sampled cluster frequency.
 - Results render in `/results/<job_id>` and poll `/api/jobs/<job_id>` until processing completes.
 
 ## Endpoint payloads

@@ -1,0 +1,47 @@
+{
+  "id": "1786125fc9d14df1874e4ac83c23d0d2",
+  "type": "border",
+  "source": "border",
+  "status": "succeeded",
+  "total_items": 5,
+  "created_at": "2026-03-09T19:42:38.261365+00:00",
+  "updated_at": "2026-03-09T19:42:48.292859+00:00",
+  "outputs": [
+    {
+      "input_filename": "DSCF9834.jpg",
+      "output_filename": "border_input_DSCF9834.jpg",
+      "output_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/border_input_DSCF9834.jpg",
+      "preview_filename": "preview_border_input_DSCF9834.jpg",
+      "preview_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/preview_border_input_DSCF9834.jpg"
+    },
+    {
+      "input_filename": "DSCF9815.jpg",
+      "output_filename": "border_input_DSCF9815.jpg",
+      "output_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/border_input_DSCF9815.jpg",
+      "preview_filename": "preview_border_input_DSCF9815.jpg",
+      "preview_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/preview_border_input_DSCF9815.jpg"
+    },
+    {
+      "input_filename": "DSCF9713.jpg",
+      "output_filename": "border_input_DSCF9713.jpg",
+      "output_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/border_input_DSCF9713.jpg",
+      "preview_filename": "preview_border_input_DSCF9713.jpg",
+      "preview_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/preview_border_input_DSCF9713.jpg"
+    },
+    {
+      "input_filename": "DSCF9573.jpg",
+      "output_filename": "border_input_DSCF9573.jpg",
+      "output_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/border_input_DSCF9573.jpg",
+      "preview_filename": "preview_border_input_DSCF9573.jpg",
+      "preview_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/preview_border_input_DSCF9573.jpg"
+    },
+    {
+      "input_filename": "DSCF9570.jpg",
+      "output_filename": "border_input_DSCF9570.jpg",
+      "output_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/border_input_DSCF9570.jpg",
+      "preview_filename": "preview_border_input_DSCF9570.jpg",
+      "preview_path": "/app/static/uploads/jobs/1786125fc9d14df1874e4ac83c23d0d2/preview_border_input_DSCF9570.jpg"
+    }
+  ],
+  "error": null
+}
