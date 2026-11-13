@@ -1,18 +1,20 @@
-version: "3.9"
-
 services:
   image-transformer:
-    image: image-transformer
+    image: image-transformer:dev
     build: .
     command: ["python", "app.py"]
     container_name: image_transformer
     ports:
-      - "55000:5000" # Map host port 55000 to container 5000 for local/dev access
+      - "55000:5000"
     volumes:
       - .:/app
-      - ./static/uploads:/app/static/uploads # Mounting the uploads directory to persist uploaded files directly
     environment:
-      - DEV=1
-      - FLASK_DEBUG=1
+      DEV: "0"
+      FLASK_DEBUG: "0"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     restart: unless-stopped
-

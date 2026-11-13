@@ -1,4 +1,4 @@
-// Optional browser regression check: Node 22+ and Chrome, with no npm dependencies.
+// React workspace smoke regression. Requires Node 22+, Chrome, and the built UI.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,11 +17,12 @@ async function freePort() {
 }
 async function until(check, label) {
     const deadline = Date.now() + 30000;
+    let lastValue = 'no response';
     while (Date.now() < deadline) {
-        try { if (await check()) return; } catch {}
+        try { const value = await check(); lastValue = String(value); if (value) return value; } catch (error) { lastValue = error.message; }
         await delay(100);
     }
-    throw new Error('Timed out: ' + label);
+    throw new Error('Timed out: ' + label + ' (last check: ' + lastValue + ')');
 }
 
 (async () => {
@@ -32,21 +33,22 @@ async function until(check, label) {
     ].find(candidate => fs.existsSync(candidate));
     assert(browserPath, 'Set CHROME_BIN to your Chrome executable.');
     assert.equal(typeof WebSocket, 'function', 'This check requires Node 22 or newer.');
-    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'image-transformer-qr-swatches-'));
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'image-toolkit-react-browser-'));
     const children = [];
     let socket, rpc;
     try {
         const port = await freePort(), debugPort = await freePort();
-        const origin = `http://127.0.0.1:${port}`;
-        // Avoid marking a running user's background jobs as interrupted on test startup.
-        const server = spawn(process.env.PYTHON || 'python', ['-c',
-            "from unittest.mock import patch; from services.job_queue import JobStore; patch.object(JobStore, 'mark_incomplete_jobs_failed').start(); import runpy; runpy.run_path('app.py', run_name='__main__')",
-        ], {
-            cwd: projectRoot, windowsHide: true, stdio: 'ignore',
-            env: { ...process.env, DEV: '0', HOST: '127.0.0.1', PORT: String(port), PYTHONDONTWRITEBYTECODE: '1' },
-        });
-        children.push(server);
-        await until(async () => (await fetch(origin + '/qr-code')).ok, 'Flask startup');
+        const origin = process.env.TOOLKIT_BASE_URL || `http://127.0.0.1:${port}`;
+        if (!process.env.TOOLKIT_BASE_URL) {
+            const server = spawn(process.env.PYTHON || 'python3', ['-c',
+                "from unittest.mock import patch; from services.job_queue import JobStore; patch.object(JobStore, 'mark_incomplete_jobs_failed').start(); import runpy; runpy.run_path('app.py', run_name='__main__')",
+            ], {
+                cwd: projectRoot, windowsHide: true, stdio: 'ignore',
+                env: { ...process.env, DEV: '0', HOST: '127.0.0.1', PORT: String(port), PYTHONDONTWRITEBYTECODE: '1', TOOLKIT_JOB_STORE: path.join(temporaryRoot, 'jobs'), TOOLKIT_UPLOAD_ROOT: path.join(temporaryRoot, 'uploads', 'jobs') },
+            });
+            children.push(server);
+        }
+        await until(async () => (await fetch(origin + '/healthz')).ok, 'Flask startup');
         children.push(spawn(browserPath, [
             '--headless=new', '--no-first-run', '--no-default-browser-check',
             '--user-data-dir=' + path.join(temporaryRoot, 'profile'), '--remote-debugging-port=' + debugPort, 'about:blank',
@@ -60,22 +62,22 @@ async function until(check, label) {
         await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
         let id = 0;
         const pending = new Map(), browserErrors = [];
-        socket.onmessage = ({data}) => {
+        socket.onmessage = ({ data }) => {
             const message = JSON.parse(data);
             if (message.method === 'Runtime.exceptionThrown') browserErrors.push(message.params.exceptionDetails);
             if (pending.has(message.id)) {
-                const {resolve, reject} = pending.get(message.id);
+                const { resolve, reject } = pending.get(message.id);
                 pending.delete(message.id);
                 if (message.error) reject(Error(JSON.stringify(message.error))); else resolve(message.result);
             }
         };
         rpc = (method, params = {}) => new Promise((resolve, reject) => {
             const number = ++id;
-            pending.set(number, {resolve, reject});
-            socket.send(JSON.stringify({id: number, method, params}));
+            pending.set(number, { resolve, reject });
+            socket.send(JSON.stringify({ id: number, method, params }));
         });
         async function evaluate(expression) {
-            const result = await rpc('Runtime.evaluate', {expression, awaitPromise: true, returnByValue: true});
+            const result = await rpc('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
             if (result.exceptionDetails) throw Error(JSON.stringify(result.exceptionDetails));
             return result.result.value;
         }
@@ -83,105 +85,192 @@ async function until(check, label) {
             const point = await evaluate(`(async () => {
                 const element = document.querySelector(${JSON.stringify(selector)});
                 if (!element || element.matches(':disabled')) throw Error('Cannot click ${selector}');
-                element.scrollIntoView({block: 'center', behavior: 'instant'});
+                element.scrollIntoView({ block: 'center', behavior: 'instant' });
                 await new Promise(requestAnimationFrame);
                 const rect = element.getBoundingClientRect();
-                return {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2};
+                return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
             })()`);
-            // Native pointer events catch disabled buttons and event ordering that .click() can miss.
-            await rpc('Input.dispatchMouseEvent', {type:'mousePressed', ...point, button:'left', clickCount:1});
-            await rpc('Input.dispatchMouseEvent', {type:'mouseReleased', ...point, button:'left', clickCount:1});
-            await evaluate('new Promise(requestAnimationFrame)');
+            await rpc('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', clickCount: 1 });
+            await rpc('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', clickCount: 1 });
+            await evaluate('new Promise(requestAnimationFrame)').catch(() => {});
         }
-        const ready = () => until(() => evaluate('downloadLink.hasAttribute("href") && !generateButton.disabled'), 'generated asset');
+        async function setText(selector, value) {
+            await click(selector);
+            await rpc('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 2 });
+            await rpc('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2 });
+            await rpc('Input.insertText', { text: value });
+        }
+        async function setInput(selector, value) {
+            return evaluate(`(() => {
+                const element = document.querySelector(${JSON.stringify(selector)});
+                const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value').set;
+                setter.call(element, ${JSON.stringify(value)});
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+                return element.value;
+            })()`);
+        }
+
         await rpc('Runtime.enable');
         await rpc('Page.enable');
-        await rpc('Emulation.setDeviceMetricsOverride', {width:1060,height:1200,deviceScaleFactor:1,mobile:false});
-        await rpc('Page.navigate', {url: origin + '/qr-code'});
-        await until(() => evaluate('document.readyState === "complete" && !!document.getElementById("qrForm")'), 'QR page');
-        assert(await evaluate('new URL(document.querySelector("script[src*=qr_code]").src).searchParams.has("v")'));
-        await evaluate(`window.check = (condition, message) => { if (!condition) throw Error(message); };
-            window.color = (element, value) => { element.value = value; element.dispatchEvent(new Event('input', {bubbles:true})); };
-            const nativeFetch = window.fetch; window.qrRequests = [];
-            window.fetch = (...args) => { if (args[0] === '/api/qr-code') qrRequests.push(Object.fromEntries(args[1].body.entries())); return nativeFetch(...args); };`);
-
-        for (const withReference of [false, true]) {
-            await evaluate(`color(destinationUrl, 'https://example.com/Pokemon?id=7#details');
-                exportFormat.value = ${JSON.stringify(withReference ? 'jpeg' : 'png')};
-                exportFormat.dispatchEvent(new Event('change', {bubbles:true}));`);
-            if (withReference) {
-                await evaluate(`(async () => {
-                    const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 32;
-                    ['#102A43','#FFF7E0','#264653','#E9F5EF'].forEach((value,index) => { canvas.getContext('2d').fillStyle = value; canvas.getContext('2d').fillRect(index*32,0,32,32); });
-                    const blob = await new Promise(resolve => canvas.toBlob(resolve));
-                    const files = new DataTransfer(); files.items.add(new File([blob], 'reference.png', {type:'image/png'})); referenceImage.files = files.files;
-                    referenceImage.dispatchEvent(new Event('change', {bubbles:true}));
-                })()`);
-            }
-            await click('#generateButton');
-            await ready();
-            await evaluate(`check(transparentBackground.tagName === 'BUTTON' && transparentBackground.parentElement === backgroundPalette, 'transparency is a palette swatch');
-                check(backgroundPalette.querySelector('[data-color]'), 'solid background option always exists');`);
-
-            const requestsBeforeSelection = await evaluate('qrRequests.length');
-            await click('#transparentBackground');
-            assert(await evaluate('!applyColorsButton.disabled && !downloadLink.hasAttribute("href")'),
-                JSON.stringify(await evaluate('({applyDisabled:applyColorsButton.disabled, selected:transparentBackground.getAttribute("aria-pressed"), status:qrColorStatus.textContent})')));
-            assert.equal(await evaluate('transparentBackground.getAttribute("aria-pressed")'), 'true');
-            assert.equal(await evaluate('qrRequests.length'), requestsBeforeSelection);
-            await click('#applyColorsButton');
-            await ready();
-            await evaluate(`check(qrRequests.at(-1).transparent_background === 'true' && qrRequests.at(-1).format === 'png', 'transparency sent as PNG');
-                check(exportFormat.value === 'png' && downloadLink.download === 'qr-code.png', 'PNG export selected');
-                check(downloadLink.href === qrPreview.src, 'preview and download match');
-                check(qrPreview.classList.contains('qr-preview-transparent'), 'transparent preview');
-                check(!background.disabled && [...backgroundPalette.children].every(button => !button.disabled), 'background choices stay usable');`);
-            await evaluate(`(async () => {
-                if (!qrPreview.complete) await new Promise(resolve => qrPreview.onload = resolve);
-                const canvas = document.createElement('canvas'); canvas.width = qrPreview.naturalWidth; canvas.height = qrPreview.naturalHeight;
-                canvas.getContext('2d').drawImage(qrPreview,0,0);
-                check(canvas.getContext('2d').getImageData(0,0,1,1).data[3] === 0, 'download contains transparent pixels');
-                check(canvas.getContext('2d').getImageData(64,64,1,1).data[3] === 255, 'QR modules stay opaque');
-            })()`);
-
-            if (withReference && process.env.QR_UI_SCREENSHOT_DIR) {
-                const output = path.resolve(process.env.QR_UI_SCREENSHOT_DIR);
-                fs.mkdirSync(output, {recursive:true});
-                for (const [name,width,height,mobile] of [['desktop',1060,1200,false],['mobile',390,1000,true]]) {
-                    await rpc('Emulation.setDeviceMetricsOverride', {width,height,deviceScaleFactor:1,mobile});
-                    await delay(300);
-                    assert(await evaluate(`document.documentElement.scrollWidth <= ${width}`));
-                    const screenshot = await rpc('Page.captureScreenshot', {format:'png',captureBeyondViewport:true});
-                    fs.writeFileSync(path.join(output, name + '.png'), Buffer.from(screenshot.data,'base64'));
+        await rpc('Emulation.setDeviceMetricsOverride', { width: 1060, height: 1000, deviceScaleFactor: 1, mobile: false });
+        await rpc('Page.navigate', { url: origin + '/' });
+        await until(() => evaluate("document.readyState === 'complete' && !!document.querySelector('[data-testid=tool-card-qrcode]')"), 'redesigned home');
+        await evaluate(`window.toolkitRequests = [];
+            const nativeFetch = window.fetch;
+            window.fetch = async (input, init = {}) => {
+                const url = typeof input === 'string' ? input : input.url;
+                let entry;
+                if (url.startsWith('/api/') || url.startsWith('/process-') || url.startsWith('/white-border')) {
+                    const body = init.body;
+                    const form = body instanceof FormData ? Object.fromEntries([...body.entries()].map(([key, value]) => [key, value instanceof File ? { name: value.name, type: value.type, size: value.size } : value])) : null;
+                    entry = { url, form };
+                    window.toolkitRequests.push(entry);
                 }
-            }
+                const response = await nativeFetch(input, init);
+                if (entry && response.headers.get('content-type')?.includes('application/json')) entry.response = await response.clone().json();
+                return response;
+            };`);
+        await delay(400);
+        assert.equal(await evaluate('toolkitRequests.length'), 0, 'Opening the workspace sends no processing requests.');
+        assert.equal(await evaluate("document.querySelectorAll('[data-testid=dock-file-input]').length"), 0, 'The empty home has no hidden sample workspace.');
 
-            await click('#backgroundPalette button[data-color]');
-            assert(await evaluate('!applyColorsButton.disabled && transparentBackground.getAttribute("aria-pressed") === "false"'));
-            await click('#applyColorsButton');
-            await ready();
-            assert(await evaluate('!qrPreview.classList.contains("qr-preview-transparent")'));
-            await click('#transparentBackground');
-            await click('#applyColorsButton');
-            await ready();
-            await evaluate('color(background, "#f6f6f6")');
-            assert(await evaluate('!applyColorsButton.disabled && transparentBackground.getAttribute("aria-pressed") === "false"'));
-            await click('#applyColorsButton');
-            await ready();
-            await click('#transparentBackground');
-            await click('#resetColorsButton');
-            assert.equal(await evaluate('transparentBackground.getAttribute("aria-pressed")'), 'false');
-            if (await evaluate('!applyColorsButton.disabled')) { await click('#applyColorsButton'); await ready(); }
-            console.log(`Passed native pointer transparency/apply, solid swatch, picker, reset, and alpha checks (${withReference ? 'image palette, JPEG to PNG' : 'no reference, PNG'}).`);
-        }
-        assert.equal(browserErrors.length,0,JSON.stringify(browserErrors));
+        await click('[data-testid=theme-toggle]');
+        assert.equal(await evaluate("getComputedStyle(document.querySelector('#root').firstElementChild).backgroundColor"), 'rgb(9, 9, 11)', 'Dark theme changes the page canvas.');
+        await click('[data-testid=theme-toggle]');
+
+        await click('[data-testid=tool-card-qrcode]');
+        await until(() => evaluate("location.pathname === '/qr-code' && !!document.querySelector('[data-testid=qr-url]')"), 'QR screen navigation');
+        await evaluate('history.back()');
+        await until(() => evaluate("location.pathname === '/' && !!document.querySelector('[data-testid=tool-card-qrcode]')"), 'Back navigation to home');
+        await evaluate('history.forward()');
+        await until(() => evaluate("location.pathname === '/qr-code' && !!document.querySelector('[data-testid=qr-generate]')"), 'Forward navigation to QR screen');
+        await delay(300);
+        assert.equal(await evaluate('toolkitRequests.length'), 0, 'Tool navigation sends no processing requests.');
+
+        const url = 'https://example.com/print?edition=7#details';
+        await setText('[data-testid=qr-url]', url);
+        assert.equal(await evaluate("document.querySelector('[data-testid=qr-generate]').disabled"), false);
+        await click('[data-testid=qr-transparent]');
+        await click('[data-testid=qr-generate]');
+        await until(() => evaluate("toolkitRequests[0]?.response && !document.querySelector('[data-testid=qr-generate]').disabled && !!document.querySelector('img[alt=\"Generated QR code\"]')"), 'backend QR preview');
+        const firstRequest = await evaluate('toolkitRequests[0].form');
+        assert.equal(firstRequest.url, url);
+        assert.equal(firstRequest.format, 'png');
+        assert.equal(firstRequest.transparent_background, 'true');
+        assert.equal(firstRequest.reference_image, undefined);
+        assert(await evaluate("document.querySelector('img[alt=\"Generated QR code\"]').src.startsWith('data:image/png')"));
+
+        const initialColors = await evaluate(`({ foreground: document.querySelector('[data-testid=qr-foreground]').value, background: document.querySelector('[data-testid=qr-background]').value })`);
+        await setInput('[data-testid=qr-foreground]', '#ff0000');
+        assert.equal(await evaluate("document.querySelector('[data-testid=qr-download]').disabled"), true, 'Manual edits disable QR download until Apply.');
+        await click('[data-testid=qr-apply-colors]');
+        await until(() => evaluate("toolkitRequests[1]?.response && !document.querySelector('[data-testid=qr-generate]').disabled"), 'manual QR color application');
+        const applied = await evaluate('toolkitRequests[1].form');
+        assert.equal(applied.foreground, '#ff0000');
+        assert.equal(applied.reference_image, undefined, 'Applying colors does not upload the reference again.');
+        await click('[data-testid=qr-reset-colors]');
+        const resetColors = await evaluate(`({ foreground: document.querySelector('[data-testid=qr-foreground]').value, background: document.querySelector('[data-testid=qr-background]').value })`);
+        assert.deepEqual(resetColors, initialColors);
+        await click('[data-testid=qr-apply-colors]');
+        await until(() => evaluate("toolkitRequests[2]?.response && !document.querySelector('[data-testid=qr-generate]').disabled"), 'reset QR color application');
+        assert.equal((await evaluate('toolkitRequests[2].form')).foreground, initialColors.foreground);
+
+        await setInput('[data-testid=qr-format]', 'JPEG');
+        assert.equal(await evaluate("document.querySelector('[data-testid=qr-transparent]')"), null, 'JPEG clears transparency mode.');
+        await click('[data-testid=qr-generate]');
+        await until(() => evaluate("toolkitRequests[3]?.response && !document.querySelector('[data-testid=qr-generate]').disabled"), 'JPEG QR generation');
+        const jpegRequest = await evaluate('toolkitRequests[3].form');
+        assert.equal(jpegRequest.format, 'jpeg');
+        assert.equal(jpegRequest.transparent_background, 'false');
+        assert(await evaluate("document.querySelector('img[alt=\"Generated QR code\"]').src.startsWith('data:image/jpeg')"));
+
+        // Exercise a tiny original through the Flask job route, then reload its
+        // saved-result route and return to it with browser Back.
+        const imagePath = path.join(temporaryRoot, 'tiny.png');
+        fs.writeFileSync(imagePath, pngFixture());
+        await click('[data-testid=brand-home]');
+        await click('[data-testid=tool-card-metadata]');
+        await until(() => evaluate("location.pathname === '/metadata' && !!document.querySelector('[data-testid=dock-file-input]')"), 'metadata workspace');
+        await rpc('DOM.enable');
+        const { root: documentNode } = await rpc('DOM.getDocument', { depth: -1 });
+        const { nodeId: uploadInput } = await rpc('DOM.querySelector', { nodeId: documentNode.nodeId, selector: '[data-testid=dock-file-input]' });
+        assert(uploadInput, 'The upload dock is available on the metadata workspace.');
+        await rpc('DOM.setFileInputFiles', { files: [imagePath], nodeId: uploadInput });
+        await evaluate("document.querySelector('[data-testid=dock-file-input]').dispatchEvent(new Event('change', { bubbles: true }))");
+        await until(() => evaluate("!!document.querySelector('[data-testid=latitude]') && document.querySelector('[data-testid=latitude]').value === ''"), 'uploaded source and metadata controls');
+        await setText('[data-testid=latitude]', '0');
+        await setText('[data-testid=longitude]', '0');
+        await click('[data-testid=generate-selected]');
+        const jobId = await until(() => evaluate("window.toolkitRequests.find(request => request.url === '/process-image' && request.response?.id)?.response.id || ''"), 'metadata job creation');
+        await until(() => evaluate(`document.querySelector('.preview-panel img')?.getAttribute('src')?.includes('/static/uploads/jobs/${jobId}/preview_') || false`), 'backend-generated tiny image preview');
+        assert.equal(await evaluate("document.querySelector('.preview-panel img').getAttribute('src').startsWith('/static/uploads/jobs/')"), true, 'The preview comes from the backend artifact.');
+        await until(() => evaluate("!!document.querySelector('[data-testid=job-zip]') && !document.querySelector('[data-testid=job-zip]').disabled"), 'current job ZIP download');
+        await setText('[data-testid=metadata-title]', 'Changed title');
+        await until(() => evaluate("document.querySelector('[data-testid=job-zip]').disabled && document.querySelector('[data-testid=generated-download]').disabled"), 'stale output download protection');
+        await click('a[href^="/results/"]');
+        await until(() => evaluate(`location.pathname === '/results/${jobId}' && !!document.querySelector('[data-testid=brand-home]') && document.body.innerText.includes('Job outputs')`), 'saved metadata job');
+        assert(await evaluate("document.querySelector('.preview-panel img')?.getAttribute('src')?.includes('/static/uploads/jobs/')"));
+        await click('[data-testid=brand-home]');
+        await until(() => evaluate("location.pathname === '/' && !!document.querySelector('[data-testid=tool-card-metadata]')"), 'home from saved result');
+        await evaluate('history.back()');
+        await until(() => evaluate(`location.pathname === '/results/${jobId}' && document.body.innerText.includes('Job outputs') && !!document.querySelector('.preview-panel img')`), 'Back navigation to a saved result');
+
+        await rpc('Emulation.setDeviceMetricsOverride', { width: 390, height: 900, deviceScaleFactor: 1, mobile: true });
+        await delay(250);
+        assert(await evaluate('document.documentElement.scrollWidth <= 390'), 'The saved output workspace fits a narrow viewport.');
+
+        await rpc('Page.navigate', { url: origin + '/results/missing-browser-audit-job' });
+        await until(() => evaluate("document.readyState === 'complete' && document.body.innerText.includes('Unable to load this saved job.')"), 'readable missing job result');
+        await evaluate('history.back()');
+        await until(() => evaluate(`location.pathname === '/results/${jobId}' && !!document.querySelector('.preview-panel img')`), 'Back navigation from a missing result');
+        assert.equal(browserErrors.length, 0, JSON.stringify(browserErrors));
+        console.log('Passed redesigned navigation, empty workspace, dark mode, QR PNG/JPEG and color Apply/Reset, backend metadata preview, stale-download protection, saved-job Back navigation, and missing-job checks.');
     } finally {
-        if (socket && socket.readyState === WebSocket.OPEN) { rpc('Browser.close').catch(() => {}); await delay(500); socket.close(); }
+        if (socket && socket.readyState === WebSocket.OPEN) { rpc('Browser.close').catch(() => {}); await delay(400); socket.close(); }
         for (const child of children.reverse()) if (child.exitCode === null) child.kill();
-        await delay(500);
+        await delay(400);
         const resolved = path.resolve(temporaryRoot);
         assert.equal(path.dirname(resolved), path.resolve(os.tmpdir()));
-        assert(path.basename(resolved).startsWith('image-transformer-qr-swatches-'));
-        fs.rmSync(resolved, {recursive:true,force:true,maxRetries:10,retryDelay:100});
+        assert(path.basename(resolved).startsWith('image-toolkit-react-browser-'));
+        fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+function pngFixture() {
+    const zlib = require('node:zlib');
+    const width = 16, height = 12;
+    const pixels = Buffer.alloc((width * 3 + 1) * height);
+    for (let y = 0; y < height; y++) {
+        const row = y * (width * 3 + 1);
+        pixels[row] = 0;
+        for (let x = 0; x < width; x++) {
+            pixels[row + 1 + x * 3] = x < width / 2 ? 240 : 20;
+            pixels[row + 2 + x * 3] = y < height / 2 ? 40 : 180;
+            pixels[row + 3 + x * 3] = 80;
+        }
+    }
+    const crcTable = Array.from({ length: 256 }, (_, n) => {
+        let c = n;
+        for (let k = 0; k < 8; k++) c = (c & 1) ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        return c >>> 0;
+    });
+    const crc32 = buffer => {
+        let crc = 0xffffffff;
+        for (const byte of buffer) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+        return (crc ^ 0xffffffff) >>> 0;
+    };
+    const chunk = (type, data) => {
+        const typeData = Buffer.from(type);
+        const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
+        const checksum = Buffer.alloc(4); checksum.writeUInt32BE(crc32(Buffer.concat([typeData, data])));
+        return Buffer.concat([length, typeData, data, checksum]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
+    ihdr[8] = 8; ihdr[9] = 2;
+    return Buffer.concat([
+        Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+        chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(pixels)), chunk('IEND', Buffer.alloc(0)),
+    ]);
+}

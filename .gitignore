@@ -89,3 +89,10 @@ build/
 # =========================
 *.bak
 *.tmp
+
+# Built UI and frontend dependencies
+/static/ui/
+/frontend/node_modules/
+/frontend/dist/
+!/frontend/public/favicon.png
+!/.dockerignore

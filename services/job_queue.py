@@ -7,7 +7,6 @@ import logging
 import os
 from pathlib import Path
 import threading
-import traceback
 from typing import Any
 from uuid import uuid4
 
@@ -26,9 +25,14 @@ def generate_preview_image(source_path: str, preview_path: str, max_dimension: i
     with Image.open(source_path) as img:
         img = ImageOps.exif_transpose(img)
         if img.mode not in ("RGB", "L"):
-            img = img.convert("RGB")
+            if "A" in img.getbands():
+                background = Image.new("RGB", img.size, "white")
+                background.paste(img, mask=img.getchannel("A"))
+                img = background
+            else:
+                img = img.convert("RGB")
         img.thumbnail((max_dimension, max_dimension))
-        img.save(preview_path, quality=82, optimize=True, progressive=True)
+        img.save(preview_path, format="JPEG", quality=82, optimize=True, progressive=True)
 
 
 def process_border_images(job_id: str, upload_folder: str, items: list[dict[str, Any]], border_size: int, aspect_ratio: str) -> dict[str, Any]:
@@ -56,7 +60,7 @@ def process_border_images(job_id: str, upload_folder: str, items: list[dict[str,
         processed_filename = f"border_{filename}"
         processed_path = os.path.join(upload_folder, processed_filename)
         processed_image.save(processed_path, quality=100, optimize=True, progressive=True)
-        preview_filename = f"preview_{processed_filename}"
+        preview_filename = f"preview_{os.path.splitext(processed_filename)[0]}.jpg"
         preview_path = os.path.join(upload_folder, preview_filename)
         generate_preview_image(processed_path, preview_path)
 
@@ -67,6 +71,7 @@ def process_border_images(job_id: str, upload_folder: str, items: list[dict[str,
                 "output_path": processed_path,
                 "preview_filename": preview_filename,
                 "preview_path": preview_path,
+                "client_image_id": item.get("client_image_id"),
             }
         )
 
@@ -83,7 +88,7 @@ def process_metadata_images(job_id: str, upload_folder: str, items: list[dict[st
             form=item["form"],
             upload_folder=upload_folder,
         )
-        preview_filename = f"preview_{os.path.basename(processed_path)}"
+        preview_filename = f"preview_{os.path.splitext(os.path.basename(processed_path))[0]}.jpg"
         preview_path = os.path.join(upload_folder, preview_filename)
         generate_preview_image(processed_path, preview_path)
         outputs.append(
@@ -93,6 +98,7 @@ def process_metadata_images(job_id: str, upload_folder: str, items: list[dict[st
                 "output_path": processed_path,
                 "preview_filename": preview_filename,
                 "preview_path": preview_path,
+                "client_image_id": item.get("client_image_id"),
             }
         )
 
@@ -103,7 +109,7 @@ class JobStore:
     def __init__(self, root: str):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def job_path(self, job_id: str) -> Path:
         return self.root / f"{job_id}.json"
@@ -141,13 +147,16 @@ class JobStore:
             return None
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def update_job(self, job_id: str, **changes: Any) -> dict[str, Any] | None:
-        job = self.load_job(job_id)
-        if job is None:
-            return None
-        job.update(changes)
-        self.save_job(job)
-        return job
+    def update_job(self, job_id: str, _expected_statuses: set[str] | None = None, **changes: Any) -> dict[str, Any] | None:
+        with self._lock:
+            job = self.load_job(job_id)
+            if job is None:
+                return None
+            if _expected_statuses is not None and job.get("status") not in _expected_statuses:
+                return job
+            job.update(changes)
+            self.save_job(job)
+            return job
 
     def mark_incomplete_jobs_failed(self) -> None:
         for path in self.root.glob("*.json"):
@@ -183,7 +192,7 @@ class JobQueue:
 
         if future and future.running() and job["status"] == "queued":
             logger.info("Running job_id=%s", job_id)
-            job = self.store.update_job(job_id, status="running") or job
+            job = self.store.update_job(job_id, _expected_statuses={"queued"}, status="running") or job
 
         return job
 
@@ -203,7 +212,7 @@ class JobQueue:
             self.store.update_job(
                 job_id,
                 status="failed",
-                error=f"{exc}\n{traceback.format_exc()}",
+                error=str(exc),
             )
             logger.exception("Failed job_id=%s", job_id)
         finally:

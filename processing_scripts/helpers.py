@@ -1,5 +1,7 @@
-import json, string, os, piexif, shutil, numpy as np, pytz
+import json, string, os, piexif, shutil, numpy as np, pytz, math
 from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderServiceError, GeocoderTimedOut
+import logging
 from PIL import Image, ImageOps, ExifTags, ImageDraw, ImageFont
 from PIL.ExifTags import TAGS, GPSTAGS
 from Pylette import extract_colors
@@ -31,52 +33,62 @@ def get_image_metadata(image_path, latitude: float=None, longitude: float=None):
         on timezone, and sanitized EXIF data.
     """
     with Image.open(image_path) as img:
-        # Get Image metadata and GPS metadata if available
-        img_metadata = {ExifTags.TAGS[k]: v for k, v in img._getexif().items() if k in ExifTags.TAGS}
-        gps_metadata = {ExifTags.GPSTAGS[k]: v for k, v in img._getexif().items() if k in ExifTags.GPSTAGS}
-        
-        # Add the GPS matadata if we are passing in a latitude and logitude
-        if latitude and longitude and gps_metadata == {}:
-            # Define GPS tags
-            exif_dict = piexif.load(img.info.get("exif", b""))
-            gps_ifd = {
-                piexif.GPSIFD.GPSLatitudeRef: 'N' if latitude >= 0 else 'S',
-                piexif.GPSIFD.GPSLatitude: to_dms(abs(latitude), 'lat')[0],
-                piexif.GPSIFD.GPSLongitudeRef: 'E' if longitude >= 0 else 'W',
-                piexif.GPSIFD.GPSLongitude: to_dms(abs(longitude), 'lon')[0],
+        exif = img.getexif()
+        metadata = {ExifTags.TAGS[key]: value for key, value in exif.items() if key in ExifTags.TAGS}
+        # Most camera capture settings live in the nested Exif IFD rather than
+        # the top-level IFD. Pillow exposes those entries separately.
+        try:
+            exif_ifd = exif.get_ifd(ExifTags.IFD.Exif)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            exif_ifd = {}
+        metadata.update({
+            ExifTags.TAGS[key]: value
+            for key, value in exif_ifd.items()
+            if key in ExifTags.TAGS
+        })
+        gps_ifd = {}
+        try:
+            gps_ifd = exif.get_ifd(ExifTags.IFD.GPSInfo)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            gps_ifd = {}
+        gps_metadata = {
+            ExifTags.GPSTAGS[key]: value
+            for key, value in gps_ifd.items()
+            if key in ExifTags.GPSTAGS
+        }
+
+        # User-supplied coordinates describe this composition even when the
+        # source file has no GPS information. Zero is a valid coordinate.
+        if latitude is not None and longitude is not None:
+            gps_metadata = {
+                "GPSLatitudeRef": "N" if latitude >= 0 else "S",
+                "GPSLatitude": to_dms(abs(latitude), "lat")[0],
+                "GPSLongitudeRef": "E" if longitude >= 0 else "W",
+                "GPSLongitude": to_dms(abs(longitude), "lon")[0],
             }
-            
-            # Add GPS data to EXIF
-            exif_dict["GPS"] = gps_ifd
-            exif_bytes = piexif.dump(exif_dict)
-            
-            gps_metadata = {ExifTags.GPSTAGS.get(k): v for k, v in gps_ifd.items()}
 
-        # Join the 2 metadata dictionaries
-        metadata = img_metadata | gps_metadata
-
-        # Clean the data of any possible unwanted binary chars
-        printable_chars = set(string.printable)
         cleaned_metadata = {}
+        for key, value in (metadata | gps_metadata).items():
+            if isinstance(value, bytes):
+                value = value.decode("ascii", errors="ignore")
+            if isinstance(value, str):
+                value = "".join(character for character in value if character in string.printable).strip()
+            cleaned_metadata[key] = value
 
-        # Iterate through the dictionary
-        for k, v in metadata.items():
-            if isinstance(v, str):
-                cleaned_value = ''.join(filter(lambda x: x in printable_chars, v))
-                cleaned_metadata[k] = cleaned_value
+        exposure = cleaned_metadata.get("ExposureTime")
+        cleaned_metadata["ShutterSpeedValue"] = format_shutter_speed(exposure) if exposure is not None else None
+
+        capture_date = cleaned_metadata.get("DateTimeOriginal")
+        if capture_date:
+            try:
+                datetime.strptime(capture_date, "%Y:%m:%d %H:%M:%S")
+            except (TypeError, ValueError):
+                cleaned_metadata["DateTimeOriginal"] = None
             else:
-                cleaned_metadata[k] = v
+                if latitude is not None and longitude is not None:
+                    cleaned_metadata["DateTimeOriginal"] = change_timezone((latitude, longitude), cleaned_metadata)
 
-        metadata = cleaned_metadata
-
-        # Tweak the Shutter Speed formatting
-        metadata['ShutterSpeedValue'] = format_shutter_speed(metadata['ExposureTime'])
-
-        # Tweak the DateTimeOriginal if we have a latitude and longitude
-        if latitude and longitude and gps_metadata:
-            metadata['DateTimeOriginal'] = change_timezone((latitude, longitude), metadata)
-
-        return metadata
+        return cleaned_metadata
 
 
 
@@ -104,7 +116,13 @@ def format_shutter_speed(ExposureTime: float) -> str:
         2.5, 3, 4, 5, 6, 8, 10, 13, 15, 20, 25, 30
     ]
 
-    closest_shutter_speed = min(standard_shutter_speeds, key=lambda x: abs(x - ExposureTime))
+    try:
+        exposure_time = float(ExposureTime)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return ""
+    if not math.isfinite(exposure_time) or exposure_time <= 0:
+        return ""
+    closest_shutter_speed = min(standard_shutter_speeds, key=lambda x: abs(x - exposure_time))
 
     # Format as a fraction if possible
     if closest_shutter_speed >= 1:
@@ -129,7 +147,10 @@ def change_timezone(coordinates: tuple[float, float],  metadata: dict[str, Any])
              If the timezone cannot be determined, returns the original 'DateTimeOriginal' value.
     """
     # Get the DateTimeOriginal field from the metadata
-    original_datetime = datetime.strptime(metadata['DateTimeOriginal'], "%Y:%m:%d %H:%M:%S")
+    try:
+        original_datetime = datetime.strptime(metadata['DateTimeOriginal'], "%Y:%m:%d %H:%M:%S")
+    except (KeyError, TypeError, ValueError):
+        return metadata.get('DateTimeOriginal', '')
 
     # Set the EST timezone
     est = pytz.timezone("America/New_York")
@@ -160,7 +181,8 @@ def calculate_font_size(image, scale_factor):
 def adjust_line_font(left_text: str, right_text: str, font_path: str, initial_font_size: int, image_width: int):
     # Set a default gap of 10 pixels and minimum font size
     gap = 10
-    min_font_size = 10
+    initial_font_size = max(1, int(initial_font_size))
+    min_font_size = min(10, initial_font_size)
 
     # Initilaize an ImageDraw object
     image = Image.new('RGB', (image_width, 100), color=(255, 255, 255))
@@ -169,10 +191,12 @@ def adjust_line_font(left_text: str, right_text: str, font_path: str, initial_fo
     # Load the font
     try:
         font = ImageFont.truetype(font_path, initial_font_size)
+        custom_font_loaded = True
         print("Successfully loaded desired font for adjustment")
     except IOError:
         print("Failed to load desired font, using default font")
         font = ImageFont.load_default()
+        custom_font_loaded = False
     
     while True:
         left_end_x = draw.textbbox((0, 0), left_text, font=font)[2]
@@ -182,19 +206,28 @@ def adjust_line_font(left_text: str, right_text: str, font_path: str, initial_fo
         if left_end_x + gap < right_start_x:
             # No overlap, return the current font size
             print(f"No overlap detected with font size: {initial_font_size}")
-            new_font_size = font.size
+            new_font_size = max(1, int(getattr(font, "size", initial_font_size) or initial_font_size))
+            break
+
+        if not custom_font_loaded:
+            new_font_size = max(1, int(getattr(font, "size", initial_font_size) or initial_font_size))
             break
 
         if font.size > min_font_size:
             # Reduce the font size and try again
             new_font_size = font.size - 1
-            font = ImageFont.truetype(font_path, new_font_size)
+            try:
+                font = ImageFont.truetype(font_path, new_font_size)
+            except (OSError, ValueError):
+                font = ImageFont.load_default()
+                custom_font_loaded = False
         else:
             # If we reach the minimum font size, break the loop
             print(f"Reached minimum font size: {min_font_size}")
+            new_font_size = min_font_size
             break
 
-    scale_factor = new_font_size / initial_font_size
+    scale_factor = new_font_size / max(1, initial_font_size)
     return new_font_size, scale_factor
 
 
@@ -220,11 +253,11 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
 
     # Set our font and image sizes depending on whether we have a landscape or portrait picture this will be the initial size
     if img_width > img_height:
-        image = Image.new('RGB', (width, height // 11), color=(255,255,255))
+        image = Image.new('RGB', (width, max(1, height // 11)), color=(255,255,255))
         larger_font_size = calculate_font_size(image, 0.30)
         smaller_font_size = calculate_font_size(image, 0.25)
     else:
-        image = Image.new('RGB', (width, height // 13), color=(255,255,255))
+        image = Image.new('RGB', (width, max(1, height // 13)), color=(255,255,255))
         larger_font_size = calculate_font_size(image, 0.236)
         smaller_font_size = calculate_font_size(image, 0.197)
 
@@ -232,28 +265,35 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
 
     # Load a font
     try:
-        font_bold = ImageFont.truetype("fonts/timesbd.ttf", larger_font_size)
-        font_regular = ImageFont.truetype("fonts/times.ttf", smaller_font_size)
+        font_root = os.path.join(os.path.dirname(__file__), "..", "fonts")
+        font_bold = ImageFont.truetype(os.path.join(font_root, "timesbd.ttf"), max(1, larger_font_size))
+        font_regular = ImageFont.truetype(os.path.join(font_root, "times.ttf"), max(1, smaller_font_size))
         print("Successfully loaded desired font")
-    except IOError:
-        font = ImageFont.load_default(larger_font_size)
+    except (OSError, ValueError):
+        font_bold = ImageFont.load_default()
+        font_regular = ImageFont.load_default()
         print("Loaded default font")
 
-    # Set the text that will be on the 1st line
-    if img_name and all([metadata['GPSLatitude'], metadata['GPSLatitudeRef'], metadata['GPSLongitude'], metadata['GPSLongitudeRef']]):
-        # Get the GPS metadata in the correct format
-        location_str = format_gps_decimal(metadata)
-        first_line_left = f"{img_name} ({location_str})"
-    else:
-        first_line_left = f"{metadata['Make']} {metadata['Model']}"
-    first_line_right = f"f/{metadata['FNumber']} {metadata['ShutterSpeedValue']}s ISO{metadata['ISOSpeedRatings']}"
+    camera_parts = [str(metadata[key]).strip() for key in ("Make", "Model") if metadata.get(key)]
+    camera = " ".join(camera_parts)
+    gps_available = all(metadata.get(key) is not None for key in (
+        "GPSLatitude", "GPSLatitudeRef", "GPSLongitude", "GPSLongitudeRef",
+    ))
+    location = format_gps_decimal(metadata) if gps_available else ""
+    first_line_left = str(img_name).strip() if img_name else camera
+    if img_name and location:
+        first_line_left = f"{first_line_left} ({location})"
+    first_line_right = "   ".join(
+        part for part in (
+            f"f/{metadata['FNumber']}" if metadata.get("FNumber") is not None else "",
+            f"{metadata['ShutterSpeedValue']}s" if metadata.get("ShutterSpeedValue") else "",
+            f"ISO {metadata['ISOSpeedRatings']}" if metadata.get("ISOSpeedRatings") is not None else "",
+        ) if part
+    )
 
-    # Set the text on the 2nd line
-    if img_name:
-        second_line_left = f"{metadata['Make']} {metadata['Model']} w/{metadata['LensMake'].capitalize()} {metadata['LensModel']}"
-    else:
-        second_line_left = f"{metadata['LensModel']}"
-    second_line_right = f"{metadata['DateTimeOriginal']}"
+    lens_parts = [str(metadata[key]).strip() for key in ("LensMake", "LensModel") if metadata.get(key)]
+    second_line_left = " ".join(lens_parts) if lens_parts else camera
+    second_line_right = str(metadata.get("DateTimeOriginal") or "")
 
     print("first_line_left: ", first_line_left)
     print("first_line_right: ", first_line_right)
@@ -261,37 +301,46 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
     print("second_line_right: ", second_line_right)
 
     # Check if we need to adjust the font size based on the text length of the first line
-    adjusted_font_size, scale_factor = adjust_line_font(first_line_left, first_line_right, "fonts/timesbd.ttf", larger_font_size, img_width)
+    first_line_left = first_line_left or "Photo metadata"
+    font_path = os.path.join(os.path.dirname(__file__), "..", "fonts", "timesbd.ttf")
+    adjusted_font_size, scale_factor = adjust_line_font(first_line_left, first_line_right, font_path, max(1, larger_font_size), img_width)
     if adjusted_font_size != larger_font_size:
         print(f"Adjusted font size from {larger_font_size} to {adjusted_font_size} with scale factor {scale_factor}")
         # Recalculate the font sizes based on the new adjusted font size
         larger_font_size = adjusted_font_size
         smaller_font_size = int(smaller_font_size * scale_factor)
-        font_bold = ImageFont.truetype("fonts/timesbd.ttf", larger_font_size)
-        font_regular = ImageFont.truetype("fonts/times.ttf", smaller_font_size)
+        try:
+            font_bold = ImageFont.truetype(font_path, max(1, larger_font_size))
+            font_regular = ImageFont.truetype(os.path.join(os.path.dirname(__file__), "..", "fonts", "times.ttf"), max(1, smaller_font_size))
+        except (OSError, ValueError):
+            font_bold = ImageFont.load_default()
+            font_regular = ImageFont.load_default()
 
     # Calculate the starting positions for the text lines based on the image dimensions
-    first_line_start = get_proportions(img_width, img_height, 50)
-    second_line_start = get_proportions(img_width, img_height, 250)
+    first_line_start = min(image.height - 1, get_proportions(img_width, img_height, 50))
+    second_line_start = min(image.height - 1, get_proportions(img_width, img_height, 250))
 
     # First line left side (Bold)
     draw.text((0, first_line_start), first_line_left, font=font_bold, fill=(0, 0, 0))
     #draw.text((51, 50), first_line_left, font=font, fill=(0, 0, 0))
 
     # First line right side (Bold)
-    bbox = draw.textbbox((0, 0), first_line_right, font=font_bold)
-    text_width = bbox[2] - bbox[0]  # Width is right - left
-    draw.text((image.width - text_width, first_line_start), first_line_right, font=font_bold, fill=(0, 0, 0))
+    if first_line_right:
+        bbox = draw.textbbox((0, 0), first_line_right, font=font_bold)
+        text_width = bbox[2] - bbox[0]
+        draw.text((image.width - text_width, first_line_start), first_line_right, font=font_bold, fill=(0, 0, 0))
     #draw.text((image.width - text_width - 49, 50), first_line_right, font=font, fill=(0, 0, 0))
 
 
     # Second line left side
-    draw.text((0, second_line_start), second_line_left, font=font_regular, fill=(0, 0, 0))
+    if second_line_left:
+        draw.text((0, second_line_start), second_line_left, font=font_regular, fill=(0, 0, 0))
 
     # Second line right side
-    bbox = draw.textbbox((0, 0), second_line_right, font=font_regular)
-    text_width = bbox[2] - bbox[0]  # Width is right - left
-    draw.text((image.width - text_width, second_line_start), second_line_right, font=font_regular, fill=(0, 0, 0))    
+    if second_line_right:
+        bbox = draw.textbbox((0, 0), second_line_right, font=font_regular)
+        text_width = bbox[2] - bbox[0]
+        draw.text((image.width - text_width, second_line_start), second_line_right, font=font_regular, fill=(0, 0, 0))
 
     return image
 
@@ -593,65 +642,22 @@ def best_aspect_ratios_for_padding(image_width, image_height):
 
 # Helper function that will be used to setup the padding for an image we want to create for a print
 def setup_print_padding(original_image: Image, stacked_image: Image, base_pad_value: int=400, desired_aspect_ratio: tuple[int, int]=None) -> tuple[int, int]:
-    """
-    Sets up the padding values for an image to match a desired aspect ratio 
-    for print purposes, considering automatic vertical padding and aspect ratio adjustments.
-
-    Parameters:
-        original_image (Image): The original PIL Image instance used as the base for calculations.
-        stacked_image (Image): The PIL Image instance representing the final stacked image.
-        base_pad_value (int, optional): The base padding value for calculating vertical padding. Default is 400.
-        desired_aspect_ratio (tuple[int, int], optional): The desired aspect ratio (width, height). 
-            If not provided, defaults to 5:4 for landscape or 2:3 for portrait images.
-
-    Returns:
-        tuple[int, int]: A tuple containing:
-            - `horizontal_padding` (int): Padding to be added horizontally to fit the aspect ratio.
-            - `vertical_padding` (int): Automatically calculated vertical padding.
-
-    Behavior:
-        - Adjusts vertical padding dynamically to ensure the stacked image's height and width align with the original image's proportions.
-        - If a `desired_aspect_ratio` is provided, it finds the best matching adjustment from the calculated aspect ratios.
-        - Defaults to common aspect ratios (5:4 for landscape, 2:3 for portrait) if no `desired_aspect_ratio` is given.
-        - Ensures all padding values are balanced and optimized for print.
-
-    """
-    # Get the value for the automatic vertical pad we will have in our new image
-    auto_vertical_pad = get_proportions(original_image.width, original_image.height, base_pad_value)
-    if original_image.width > original_image.height:
-        while (auto_vertical_pad * 2) + stacked_image.height > stacked_image.width:
-            base_pad_value -= 50
-            auto_vertical_pad = get_proportions(original_image.width, original_image.height, base_pad_value)
+    """Return symmetric padding that contains the composition at the target ratio."""
+    base_pad_value = max(0, int(base_pad_value))
+    vertical_padding = get_proportions(original_image.width, original_image.height, base_pad_value)
+    target_width, target_height = desired_aspect_ratio or (original_image.width, original_image.height)
+    if target_width <= 0 or target_height <= 0:
+        raise ValueError("Aspect ratio dimensions must be positive")
+    target_ratio = target_width / target_height
+    content_width = stacked_image.width
+    content_height = stacked_image.height + 2 * vertical_padding
+    if content_width / content_height < target_ratio:
+        target_canvas_width = math.ceil(content_height * target_ratio)
+        horizontal_padding = math.ceil((target_canvas_width - content_width) / 2)
     else:
-        while (auto_vertical_pad * 2) + stacked_image.height < stacked_image.width:
-            base_pad_value -= 50
-            auto_vertical_pad = get_proportions(original_image.width, original_image.height, base_pad_value)
-    print(f"auto_vertical_pad: {auto_vertical_pad}")
-
-    # Calculate the adjustments needed for all transformations to all common print aspect ratios
-    aspect_ratio_adjustment_list = best_aspect_ratios_for_padding(stacked_image.width, stacked_image.height + (2 * auto_vertical_pad))
-    print(aspect_ratio_adjustment_list)
-
-    # Format the target aspect ratio if present:
-    if desired_aspect_ratio is not None:
-        if type(desired_aspect_ratio) is tuple and len(desired_aspect_ratio) == 2:
-            aspect_ratio_str = f"{desired_aspect_ratio[0]}:{desired_aspect_ratio[1]}"
-        else:
-            aspect_ratio_str = str(desired_aspect_ratio)
-    else:
-        # Set a default processing if no desired aspect ratio (5:4 for Landscape and 2:3 for Portrait)
-        aspect_ratio = (5, 4) if original_image.width > original_image.height else (2, 3)
-        aspect_ratio_str = f"{aspect_ratio[0]}:{aspect_ratio[1]}"
-        
-    # Get the aspect ratio adjustment object    
-    aspect_ratio_adjustment_obj = next((item for item in aspect_ratio_adjustment_list if item["aspect_ratio"] == aspect_ratio_str), None)
-
-    # Set the padding values
-    horizontal_padding = aspect_ratio_adjustment_obj["width_padding"] // 2
-    vertical_padding = auto_vertical_pad
-
-    print(f"Horizontal padding: {horizontal_padding} and Vertical padding: {vertical_padding}")
-
+        target_canvas_height = math.ceil(content_width / target_ratio)
+        vertical_padding = max(vertical_padding, math.ceil((target_canvas_height - stacked_image.height) / 2))
+        horizontal_padding = 0
     return (horizontal_padding, vertical_padding)
 
 
@@ -659,19 +665,17 @@ def setup_print_padding(original_image: Image, stacked_image: Image, base_pad_va
 
 # Helper function to get the coordinates from an address input by the user
 def get_coordinates_from_address(address: str) -> tuple[float, float]:
-    # Initialize the user agent for Geopy
-    loc = Nominatim(user_agent="image_transformer", timeout=10)
-
-    # Geocode the input address
-    location = loc.geocode(address)
-
-    # Check if we got a valid location
+    if not address or not address.strip():
+        raise ValueError("Enter an address or a complete latitude and longitude pair")
+    try:
+        loc = Nominatim(user_agent="image_transformer", timeout=10)
+        location = loc.geocode(address.strip())
+    except (GeocoderTimedOut, GeocoderServiceError, OSError) as exc:
+        logging.getLogger("image_transformer.geocoding").exception("Geocoding failed")
+        raise ValueError("Could not look up this address. Check your connection and try again.") from exc
     if location:
-        print(f"Coordinates for {address}: {location.latitude}, {location.longitude}")
         return (location.latitude, location.longitude)
-    else:
-        print(f"Could not find coordinates for address: {address}")
-        return (None, None)
+    raise ValueError("Could not find this address. Try a more specific location.")
     
 
 # Helper function to format GPS metadata to a string
@@ -687,19 +691,20 @@ def format_gps_decimal(metadata):
         str: A formatted string with latitude and longitude in decimal degrees (e.g., "37.7749° N, 122.4194° W"). 
              Returns "Insufficient GPS metadata" if required metadata is missing.
     """
-    if metadata['GPSLatitude'] and metadata['GPSLatitudeRef'] and metadata['GPSLongitudeRef'] and metadata['GPSLongitude']:
-        latitude_dms = metadata['GPSLatitude']
-        latitude_ref = metadata['GPSLatitudeRef']
-        longitude_dms = metadata['GPSLongitude']
-        longitude_ref = metadata['GPSLongitudeRef']
-
-        latitude = dms_to_decimal(latitude_dms, latitude_ref)
-        longitude = dms_to_decimal(longitude_dms, longitude_ref)
-
-        # Return the string
+    if not all(metadata.get(key) is not None for key in ('GPSLatitude', 'GPSLatitudeRef', 'GPSLongitude', 'GPSLongitudeRef')):
+        return ""
+    try:
+        latitude_ref = str(metadata['GPSLatitudeRef']).upper()
+        longitude_ref = str(metadata['GPSLongitudeRef']).upper()
+        if latitude_ref not in {'N', 'S'} or longitude_ref not in {'E', 'W'}:
+            return ""
+        latitude = dms_to_decimal(metadata['GPSLatitude'], latitude_ref)
+        longitude = dms_to_decimal(metadata['GPSLongitude'], longitude_ref)
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            return ""
         return f"{abs(latitude):.4f}° {latitude_ref}, {abs(longitude):.4f}° {longitude_ref}"
-    else:
-        return "Insufficient GPS metadata"
+    except (TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError):
+        return ""
     
 # Helper function to convert decimal coordinates into degrees, minutes, seconds tuple format
 def to_dms(value, loc):
@@ -736,13 +741,22 @@ def dms_to_decimal(dms, ref):
         float: The decimal representation of the coordinate. Negative if the 
                reference is 'S' or 'W'.
     """
-    degrees = dms[0][0] / dms[0][1]
-    minutes = dms[1][0] / dms[1][1]
-    seconds = dms[2][0] / dms[2][1]
+    def rational(value):
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            numerator, denominator = value
+            denominator = float(denominator)
+            if denominator == 0:
+                raise ZeroDivisionError
+            return float(numerator) / denominator
+        return float(value)
 
-    decimal = degrees + (minutes / 60.0) + (seconds / 3600)
-
-    if ref in ['S', 'W']:
+    if len(dms) != 3:
+        raise ValueError("GPS coordinates must contain degrees, minutes, and seconds")
+    degrees, minutes, seconds = (rational(value) for value in dms)
+    if min(degrees, minutes, seconds) < 0 or minutes >= 60 or seconds >= 60:
+        raise ValueError("GPS coordinate components are out of range")
+    decimal = degrees + (minutes / 60.0) + (seconds / 3600.0)
+    if str(ref).upper() in {'S', 'W'}:
         decimal = -decimal
     return decimal
 

@@ -1,10 +1,18 @@
 import base64
 from io import BytesIO
+import os
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 import numpy as np
 from PIL import Image
+
+# The app performs restart recovery during import. Keep all jobs and uploads
+# from this module in disposable storage instead of the user's working store.
+_test_storage = TemporaryDirectory(prefix="image-toolkit-qr-tests-")
+os.environ["TOOLKIT_JOB_STORE"] = os.path.join(_test_storage.name, "jobs")
+os.environ["TOOLKIT_UPLOAD_ROOT"] = os.path.join(_test_storage.name, "uploads", "jobs")
 
 from app import app
 from services.qr_code_service import MAX_REFERENCE_BYTES

@@ -1,23 +1,21 @@
-version: "3.9"
-
 services:
   image-transformer:
     image: image-transformer:latest
-    command: ["gunicorn", "app:app", "--bind", "0.0.0.0:5000", "--workers", "4"]
-    build:
-      context: .
-    container_name: image_transformer_prod
+    build: .
     ports:
-      - "5000:5000" # Expose container port 5000 on host
-    volumes: []
+      - "5000:5000"
     environment:
-      - DEV=0
-      - PRODUCTION=1
-      - FLASK_DEBUG=0
-      - SECRET_KEY=${SECRET_KEY}
+      DEV: "0"
+    volumes:
+      - toolkit_jobs:/app/data/jobs
+      - toolkit_uploads:/app/static/uploads
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5000/ || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/', timeout=3)"]
       interval: 30s
       timeout: 5s
+      start_period: 20s
       retries: 3
+volumes:
+  toolkit_jobs:
+  toolkit_uploads:

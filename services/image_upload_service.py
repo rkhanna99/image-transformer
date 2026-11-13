@@ -50,6 +50,11 @@ def palette_color_samples(palette):
 
 def process_color_palette(file, num_colors, upload_folder):
     """Extract dominant colors and save them as a row of square tiles."""
+    return process_color_palette_result(file, num_colors, upload_folder)["output_path"]
+
+
+def process_color_palette_result(file, num_colors, upload_folder):
+    """Return the saved palette image and colors from the same extraction."""
     with Image.open(file.stream) as image:
         palette = extract_dominant_palette(image, num_colors)
 
@@ -59,7 +64,16 @@ def process_color_palette(file, num_colors, upload_folder):
         palette, w=200, h=200, save_to_file=True,
         filename=output_path, extension='png',
     )
-    return f"{output_path}.png"
+    return {
+        "output_path": f"{output_path}.png",
+        "palette": [
+            {
+                "hex": "#{:02X}{:02X}{:02X}".format(*rgb),
+                "frequency": frequency,
+            }
+            for rgb, frequency in palette_color_samples(palette)
+        ],
+    }
 
 
 '''
@@ -110,13 +124,24 @@ def process_metadata_overlay_path(image_path, original_filename, form, upload_fo
     print_aspect_ratio = aspect_ratio
     if aspect_ratio == "Custom":
         custom_aspect = form.get('customAspectRatio')
-        if custom_aspect:
-            try:
-                width, height = map(int, custom_aspect.split(":"))
-                print_aspect_ratio = (width, height)
-            except ValueError:
-                raise ValueError("Invalid custom aspect ratio")
-    elif aspect_ratio == "Default":
+        if not custom_aspect:
+            raise ValueError("Invalid custom aspect ratio")
+        try:
+            width, height = map(int, custom_aspect.split(":"))
+            if width <= 0 or height <= 0:
+                raise ValueError
+            print_aspect_ratio = (width, height)
+        except ValueError as exc:
+            raise ValueError("Invalid custom aspect ratio") from exc
+    elif aspect_ratio != "Default":
+        try:
+            width, height = map(int, aspect_ratio.split(":"))
+            if width <= 0 or height <= 0:
+                raise ValueError
+            print_aspect_ratio = (width, height)
+        except (AttributeError, ValueError) as exc:
+            raise ValueError("Invalid aspect ratio") from exc
+    else:
         # Open the image to determine its aspect ratio
         with Image.open(image_path) as img:
             # Ensure the image is in its correct orientation after opening it

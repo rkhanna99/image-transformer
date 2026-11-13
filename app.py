@@ -9,7 +9,7 @@ from pathlib import Path
 import zipfile
 from PIL import Image, UnidentifiedImageError
 
-from services.image_upload_service import process_color_palette
+from services.image_upload_service import process_color_palette, process_color_palette_result
 from services.job_queue import JobQueue, JobStore
 from services.qr_code_service import MAX_REFERENCE_BYTES, generate_qr_code
 from services.request_payloads import parse_batch_metadata_payload, parse_border_payload, parse_single_metadata_payload
@@ -23,8 +23,8 @@ logger = logging.getLogger("image_transformer.app")
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-STATIC_UPLOAD_ROOT = PROJECT_ROOT / "static" / "uploads" / "jobs"
-JOB_STORE_ROOT = PROJECT_ROOT / "data" / "jobs"
+STATIC_UPLOAD_ROOT = Path(os.getenv("TOOLKIT_UPLOAD_ROOT", str(PROJECT_ROOT / "static" / "uploads" / "jobs"))).resolve()
+JOB_STORE_ROOT = Path(os.getenv("TOOLKIT_JOB_STORE", str(PROJECT_ROOT / "data" / "jobs"))).resolve()
 
 STATIC_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 JOB_STORE_ROOT.mkdir(parents=True, exist_ok=True)
@@ -41,8 +41,8 @@ def build_job_file_urls(job_id: str, outputs: list[dict]) -> tuple[list[str], li
     for output in outputs:
         filename = output["output_filename"]
         preview_filename = output.get("preview_filename", filename)
-        preview_urls.append(url_for("static", filename=f"uploads/jobs/{job_id}/{preview_filename}"))
-        image_urls.append(url_for("static", filename=f"uploads/jobs/{job_id}/{filename}"))
+        preview_urls.append(url_for("job_asset", job_id=job_id, filename=preview_filename))
+        image_urls.append(url_for("job_asset", job_id=job_id, filename=filename))
         filenames.append(filename)
     return preview_urls, image_urls, filenames
 
@@ -65,44 +65,66 @@ def create_job_folder(job_id: str) -> Path:
     return job_folder
 
 
-def save_uploaded_files(files, job_folder: Path) -> list[dict]:
+def save_uploaded_files(files, job_folder: Path, client_ids: list[str] | None = None) -> list[dict]:
     saved_items = []
-    for file in files:
+    for index, file in enumerate(files):
         if not file or file.filename == "":
             continue
         original_filename = secure_filename(file.filename)
-        input_filename = f"input_{original_filename}"
+        if not original_filename or original_filename in {".", ".."}:
+            original_filename = f"image_{index + 1}"
+        input_filename = secure_filename(f"input_{index + 1}_{os.urandom(8).hex()}_{original_filename}")
         input_path = job_folder / input_filename
         file.save(input_path)
-        saved_items.append(
-            {
-                "original_filename": original_filename,
-                "input_filename": input_filename,
-                "input_path": str(input_path),
-            }
-        )
+        saved_item = {
+            "original_filename": original_filename,
+            "input_filename": input_filename,
+            "input_path": str(input_path),
+        }
+        if client_ids is not None:
+            saved_item["client_image_id"] = client_ids[index]
+        saved_items.append(saved_item)
     return saved_items
 
 
 @app.route("/")
 def home():
-    return render_template("home.html")
+    return frontend_shell()
+
+
+@app.get("/healthz")
+def healthcheck():
+    return jsonify({"status": "ok"})
+
+
+@app.get("/static/uploads/jobs/<job_id>/<path:filename>")
+def job_asset(job_id: str, filename: str):
+    return send_from_directory(str(STATIC_UPLOAD_ROOT / job_id), filename)
+
+
+def frontend_shell():
+    index_path = PROJECT_ROOT / "static" / "ui" / "index.html"
+    if not index_path.is_file():
+        return "The frontend build is missing. Build the React application and try again.", 503
+    response = send_from_directory(index_path.parent, index_path.name)
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.route("/metadata")
 def upload_form():
-    return render_template("upload.html")
+    return frontend_shell()
 
 
 @app.route("/border")
 def border_form():
-    return render_template("border.html")
+    return frontend_shell()
 
 
 @app.route('/palette', methods=['GET', 'POST'])
 def palette_form():
     if request.method == 'GET':
-        return render_template('palette.html', num_colors=7)
+        return frontend_shell()
 
     num_colors = request.form.get('num_colors', '')
 
@@ -141,10 +163,50 @@ def palette_form():
     return redirect(url_for('results_page', job_id=job["id"]))
 
 
+@app.post("/api/palette")
+def palette_api():
+    image = request.files.get("image")
+    if not image or not image.filename:
+        return jsonify({"error": "Please select an image."}), 400
+    try:
+        raw_count = request.form.get("num_colors", "7")
+        count = int(raw_count)
+        if str(raw_count).strip() != str(count) or not 1 <= count <= 32:
+            raise ValueError("Choose a whole number of colors between 1 and 32.")
+        client_id = request.form.get("clientImageId") or None
+        if client_id is not None and len(client_id) > 128:
+            raise ValueError("clientImageId must be 128 characters or fewer")
+    except (TypeError, ValueError) as exc:
+        message = str(exc) or "Choose a whole number of colors between 1 and 32."
+        return jsonify({"error": message}), 400
+
+    job = job_store.create_job(job_type="palette", source="palette", total_items=1)
+    job_folder = create_job_folder(job["id"])
+    try:
+        result = process_color_palette_result(image, count, str(job_folder))
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        job_store.update_job(job["id"], status="failed", error=str(exc))
+        return jsonify({"error": "Unable to read this image. Please upload a valid, supported image file."}), 400
+
+    filename = os.path.basename(result["output_path"])
+    output = {
+        "input_filename": secure_filename(image.filename),
+        "output_filename": filename,
+        "output_path": result["output_path"],
+        "preview_filename": filename,
+        "preview_path": result["output_path"],
+        "client_image_id": client_id,
+    }
+    job = job_store.update_job(
+        job["id"], status="succeeded", outputs=[output],
+        palette=result["palette"], error=None,
+    )
+    return jsonify(serialize_job(job)), 200
+
+
 @app.get('/qr-code')
 def qr_code_form():
-    script_version = (PROJECT_ROOT / 'static' / 'js' / 'qr_code.js').stat().st_mtime_ns
-    return render_template('qr_code.html', qr_script_version=script_version)
+    return frontend_shell()
 
 
 @app.post('/api/qr-code')
@@ -188,7 +250,7 @@ def process_image_endpoint():
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["image"]
-    if file.filename == "":
+    if not file.filename:
         return jsonify({"error": "No selected file"}), 400
 
     try:
@@ -205,6 +267,7 @@ def process_image_endpoint():
         {
             **saved_items[0],
             "form": payload.as_form(),
+            "client_image_id": payload.clientImageId,
         }
     ]
 
@@ -220,13 +283,16 @@ def process_images_endpoint():
         return jsonify({"error": "No file uploaded"}), 400
 
     files = request.files.getlist("images")
+    if not files or any(not file.filename for file in files):
+        return jsonify({"error": "Select a valid file for every image"}), 400
     try:
         payload = parse_batch_metadata_payload(request.form, len(files))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     job = job_store.create_job(job_type="metadata", source="metadata", total_items=len(files))
     job_folder = create_job_folder(job["id"])
-    saved_items = save_uploaded_files(files, job_folder)
+    client_ids = [image.clientImageId for image in payload.images] if any(image.clientImageId for image in payload.images) else None
+    saved_items = save_uploaded_files(files, job_folder, client_ids)
     if not saved_items:
         return jsonify({"error": "No valid files uploaded"}), 400
     if len(payload.images) != len(saved_items):
@@ -239,6 +305,7 @@ def process_images_endpoint():
             {
                 **saved_item,
                 "form": image_payload.as_form(),
+                "client_image_id": image_payload.clientImageId,
             }
         )
 
@@ -256,15 +323,17 @@ def white_border_endpoint():
     files = request.files.getlist("images")
     if not files:
         return jsonify({"error": "No file uploaded"}), 400
+    if any(not file.filename for file in files):
+        return jsonify({"error": "Select a valid file for every image"}), 400
 
     try:
-        payload = parse_border_payload(request.form)
+        payload = parse_border_payload(request.form, len(files))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
     job = job_store.create_job(job_type="border", source="border", total_items=len(files))
     job_folder = create_job_folder(job["id"])
-    saved_items = save_uploaded_files(files, job_folder)
+    saved_items = save_uploaded_files(files, job_folder, payload.clientImageIds)
     if not saved_items:
         return jsonify({"error": "No valid files uploaded"}), 400
 
@@ -295,20 +364,7 @@ def legacy_results_page():
 
 @app.get("/results/<job_id>")
 def results_page(job_id: str):
-    job = job_queue.refresh_job(job_id)
-    if job is None:
-        return redirect(url_for("home"))
-
-    preview_urls, image_urls, filenames = build_job_file_urls(job_id, job.get("outputs", []))
-    return render_template(
-        "results.html",
-        job_id=job_id,
-        initial_status=job["status"],
-        image_urls=preview_urls,
-        full_image_urls=image_urls,
-        download_filenames=filenames,
-        source=job.get("source", "metadata"),
-    )
+    return frontend_shell()
 
 
 @app.get("/download/<job_id>/<filename>")
