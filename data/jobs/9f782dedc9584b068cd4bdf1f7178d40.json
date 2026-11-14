@@ -1,0 +1,26 @@
+{
+  "id": "9f782dedc9584b068cd4bdf1f7178d40",
+  "type": "metadata",
+  "source": "metadata",
+  "status": "succeeded",
+  "total_items": 1,
+  "created_at": "2026-11-13T22:21:00.490760+00:00",
+  "updated_at": "2026-11-13T22:21:03.768320+00:00",
+  "outputs": [
+    {
+      "input_filename": "DSCF2939-2.jpg",
+      "output_filename": "processed_input_1_d8d19a2fc5e47578_DSCF2939-2.jpg",
+      "output_path": "/app/static/uploads/jobs/9f782dedc9584b068cd4bdf1f7178d40/processed_input_1_d8d19a2fc5e47578_DSCF2939-2.jpg",
+      "preview_filename": "preview_processed_input_1_d8d19a2fc5e47578_DSCF2939-2.jpg",
+      "preview_path": "/app/static/uploads/jobs/9f782dedc9584b068cd4bdf1f7178d40/preview_processed_input_1_d8d19a2fc5e47578_DSCF2939-2.jpg",
+      "client_image_id": "23121c7d-765a-4a74-b31a-44e0175d542b",
+      "metadata_options": {
+        "overlayStyle": "card",
+        "themeTone": "linen-light",
+        "showGpsCoordinates": true,
+        "showColorStrip": true
+      }
+    }
+  ],
+  "error": null
+}

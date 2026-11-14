@@ -1,0 +1,20 @@
+{
+  "id": "493a8df2790742c69f42330808716b43",
+  "type": "metadata",
+  "source": "metadata",
+  "status": "succeeded",
+  "total_items": 1,
+  "created_at": "2026-11-13T06:41:42.007416+00:00",
+  "updated_at": "2026-11-13T06:41:45.757598+00:00",
+  "outputs": [
+    {
+      "input_filename": "DSCF8555-2.jpg",
+      "output_filename": "processed_input_1_8e35876e5bc0a284_DSCF8555-2.jpg",
+      "output_path": "/app/static/uploads/jobs/493a8df2790742c69f42330808716b43/processed_input_1_8e35876e5bc0a284_DSCF8555-2.jpg",
+      "preview_filename": "preview_processed_input_1_8e35876e5bc0a284_DSCF8555-2.jpg",
+      "preview_path": "/app/static/uploads/jobs/493a8df2790742c69f42330808716b43/preview_processed_input_1_8e35876e5bc0a284_DSCF8555-2.jpg",
+      "client_image_id": "7ee955d6-51fa-4643-9871-7476afff987b"
+    }
+  ],
+  "error": null
+}

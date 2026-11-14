@@ -36,6 +36,7 @@ async function until(check, label) {
     const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'image-toolkit-react-browser-'));
     const children = [];
     let socket, rpc;
+    let serverLog = '';
     try {
         const port = await freePort(), debugPort = await freePort();
         const origin = process.env.TOOLKIT_BASE_URL || `http://127.0.0.1:${port}`;
@@ -43,12 +44,18 @@ async function until(check, label) {
             const server = spawn(process.env.PYTHON || 'python3', ['-c',
                 "from unittest.mock import patch; from services.job_queue import JobStore; patch.object(JobStore, 'mark_incomplete_jobs_failed').start(); import runpy; runpy.run_path('app.py', run_name='__main__')",
             ], {
-                cwd: projectRoot, windowsHide: true, stdio: 'ignore',
+                cwd: projectRoot, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
                 env: { ...process.env, DEV: '0', HOST: '127.0.0.1', PORT: String(port), PYTHONDONTWRITEBYTECODE: '1', TOOLKIT_JOB_STORE: path.join(temporaryRoot, 'jobs'), TOOLKIT_UPLOAD_ROOT: path.join(temporaryRoot, 'uploads', 'jobs') },
             });
+            server.stdout.on('data', data => { serverLog = (serverLog + data).slice(-6000); });
+            server.stderr.on('data', data => { serverLog = (serverLog + data).slice(-6000); });
             children.push(server);
         }
-        await until(async () => (await fetch(origin + '/healthz')).ok, 'Flask startup');
+        try {
+            await until(async () => (await fetch(origin + '/healthz')).ok, 'Flask startup');
+        } catch (error) {
+            throw new Error(error.message + '\nFlask output:\n' + serverLog);
+        }
         children.push(spawn(browserPath, [
             '--headless=new', '--no-first-run', '--no-default-browser-check',
             '--user-data-dir=' + path.join(temporaryRoot, 'profile'), '--remote-debugging-port=' + debugPort, 'about:blank',
@@ -199,22 +206,135 @@ async function until(check, label) {
         await rpc('DOM.setFileInputFiles', { files: [imagePath], nodeId: uploadInput });
         await evaluate("document.querySelector('[data-testid=dock-file-input]').dispatchEvent(new Event('change', { bubbles: true }))");
         await until(() => evaluate("!!document.querySelector('[data-testid=latitude]') && document.querySelector('[data-testid=latitude]').value === ''"), 'uploaded source and metadata controls');
+        const processingRequests = () => evaluate("toolkitRequests.filter(request => request.url === '/process-image' || request.url === '/process-images').length");
+        assert.equal(await evaluate("document.querySelector('[data-testid=metadata-style-original]').getAttribute('aria-pressed')"), 'true');
+        await click('[data-testid=metadata-style-card]');
+        await setInput('[data-testid=metadata-theme]', 'slate-dark');
+        await click('[data-testid=metadata-show-gps]');
+        await click('[data-testid=metadata-show-colors]');
+        assert.equal(await processingRequests(), 0, 'Design edits do not generate outputs.');
+
+        // A second source owns an independent design; switching sources retains both drafts.
+        const secondPath = path.join(temporaryRoot, 'second.png');
+        fs.writeFileSync(secondPath, pngFixture());
+        await rpc('DOM.setFileInputFiles', { files: [secondPath], nodeId: uploadInput });
+        await evaluate("document.querySelector('[data-testid=dock-file-input]').dispatchEvent(new Event('change', { bubbles: true }))");
+        await until(() => evaluate("!!document.querySelector('button[aria-label=\"Select second.png\"]')"), 'second metadata source');
+        await click('button[title="Next image"]');
+        await until(() => evaluate("document.querySelector('[data-testid=metadata-title]').value === 'second'"), 'second image selection');
+        assert.equal(await evaluate("document.querySelector('[data-testid=metadata-style-original]').getAttribute('aria-pressed')"), 'true');
+        await click('[data-testid=metadata-style-film]');
+        await setInput('[data-testid=metadata-theme]', 'slate-dark');
+        await click('[data-testid=metadata-show-colors]');
+        await setText('[data-testid=latitude]', '0');
+        await setText('[data-testid=longitude]', '0');
+        await click('button[title="Previous image"]');
+        await until(() => evaluate("document.querySelector('[data-testid=metadata-title]').value === 'tiny'"), 'first image selection');
+        assert.equal(await evaluate("document.querySelector('[data-testid=metadata-style-card]').getAttribute('aria-pressed')"), 'true');
+        assert.equal(await evaluate("document.querySelector('[data-testid=metadata-theme]').value"), 'slate-dark');
+        assert.equal(await evaluate("document.querySelector('[data-testid=metadata-show-gps]').checked"), false);
+        await click('[data-testid=metadata-reset]');
+        assert.equal(await evaluate("document.querySelector('[data-testid=metadata-style-original]').getAttribute('aria-pressed')"), 'true');
+        assert.equal(await evaluate("document.querySelector('[data-testid=metadata-theme]').value"), 'linen-light');
+        assert.equal(await evaluate("document.querySelector('[data-testid=metadata-show-gps]').checked && document.querySelector('[data-testid=metadata-show-colors]').checked"), true);
         await setText('[data-testid=latitude]', '0');
         await setText('[data-testid=longitude]', '0');
         await click('[data-testid=generate-selected]');
-        const jobId = await until(() => evaluate("window.toolkitRequests.find(request => request.url === '/process-image' && request.response?.id)?.response.id || ''"), 'metadata job creation');
+        let jobId = await until(() => evaluate("window.toolkitRequests.find(request => request.url === '/process-image' && request.response?.id)?.response.id || ''"), 'metadata job creation');
         await until(() => evaluate(`document.querySelector('.preview-panel img')?.getAttribute('src')?.includes('/static/uploads/jobs/${jobId}/preview_') || false`), 'backend-generated tiny image preview');
         assert.equal(await evaluate("document.querySelector('.preview-panel img').getAttribute('src').startsWith('/static/uploads/jobs/')"), true, 'The preview comes from the backend artifact.');
         await until(() => evaluate("!!document.querySelector('[data-testid=job-zip]') && !document.querySelector('[data-testid=job-zip]').disabled"), 'current job ZIP download');
+        const firstJobId = jobId;
+        const initialProcessingCount = await processingRequests();
+        for (const style of ['card', 'overlay', 'film']) {
+            await click(`[data-testid=metadata-style-${style}]`);
+            assert.equal(await evaluate("document.querySelector('[data-testid=generated-download]').disabled"), true, 'Style changes mark the existing artifact stale.');
+        }
+        await click('[data-testid=metadata-style-original]');
+        assert.equal(await evaluate("document.querySelector('[data-testid=generated-download]').disabled"), false, 'Returning to the generated settings clears staleness.');
+        await setInput('[data-testid=metadata-theme]', 'slate-dark');
+        assert.equal(await evaluate("document.querySelector('[data-testid=generated-download]').disabled"), true);
+        await setInput('[data-testid=metadata-theme]', 'linen-light');
+        for (const toggle of ['metadata-show-gps', 'metadata-show-colors']) {
+            await click(`[data-testid=${toggle}]`);
+            assert.equal(await evaluate("document.querySelector('[data-testid=generated-download]').disabled"), true);
+            await click(`[data-testid=${toggle}]`);
+            assert.equal(await evaluate("document.querySelector('[data-testid=generated-download]').disabled"), false);
+        }
+        assert.equal(await processingRequests(), initialProcessingCount);
+
+        // Hold a submitted response so a draft edit happens while generation is pending.
+        await evaluate(`{
+            const previousFetch = window.fetch;
+            window.holdMetadataResponse = true;
+            window.fetch = async (input, init) => {
+                let response = await previousFetch(input, init);
+                const url = typeof input === 'string' ? input : input.url;
+                if (url === '/process-image' && window.holdMetadataResponse) {
+                    window.holdMetadataResponse = false;
+                    await new Promise(resolve => { window.releaseMetadataResponse = resolve; });
+                }
+                return response;
+            };
+        }`);
+        await click('[data-testid=metadata-style-card]');
+        await click('[data-testid=metadata-show-colors]');
+        await click('[data-testid=generate-selected]');
+        await until(() => evaluate("typeof releaseMetadataResponse === 'function'"), 'held metadata response');
+        const cardJobId = await evaluate("toolkitRequests.filter(request => request.url === '/process-image').at(-1).response.id");
+        await click('[data-testid=metadata-style-overlay]');
+        await evaluate('releaseMetadataResponse()');
+        await until(() => evaluate(`document.querySelector('.preview-panel img')?.getAttribute('src')?.includes('/${cardJobId}/') && !document.querySelector('[data-testid=generate-selected]').disabled`), 'submitted Card result while Overlay is selected');
+        assert.equal(await evaluate("document.querySelector('[data-testid=generated-download]').disabled"), true);
+        assert(await evaluate("document.body.innerText.includes('Generated result · Card')"), 'Result labels use the submitted style.');
+        await click('[data-testid=generate-selected]');
+        await until(() => evaluate("!document.querySelector('[data-testid=generate-selected]').disabled && !document.querySelector('[data-testid=generated-download]').disabled && document.body.innerText.includes('Generated result · Overlay')"), 'regenerated Overlay result');
+
+        // Generate a real mixed-style batch and inspect the persisted settings.
+        await click('[data-testid=metadata-style-card]');
+        await click('[data-testid=generate-all]');
+        jobId = await until(() => evaluate("toolkitRequests.find(request => request.url === '/process-images' && request.response?.id)?.response.id || ''"), 'mixed-style batch creation');
+        await until(() => evaluate(`document.querySelector('.preview-panel img')?.getAttribute('src')?.includes('/${jobId}/') && !document.querySelector('[data-testid=job-zip]').disabled`), 'mixed-style batch completion');
+        const mixed = await (await fetch(origin + '/api/jobs/' + jobId)).json();
+        assert.deepEqual(mixed.outputs.map(output => output.metadata_options.overlayStyle), ['card', 'film']);
+        assert.deepEqual(mixed.outputs.map(output => output.metadata_options.themeTone), ['linen-light', 'slate-dark']);
+        const mixedPayload = await evaluate("JSON.parse(toolkitRequests.find(request => request.url === '/process-images').form.payload)");
+        assert.deepEqual(mixed.outputs.map(output => output.client_image_id), mixedPayload.images.map(image => image.clientImageId));
+        assert(mixed.outputs.every(output => output.metadata_options.showColorStrip === false));
+        assert.notEqual(jobId, firstJobId);
+        await rpc('Emulation.setDeviceMetricsOverride', { width: 390, height: 1100, deviceScaleFactor: 1, mobile: true });
+        await delay(250);
+        assert(await evaluate('document.documentElement.scrollWidth <= 390'), 'Metadata controls fit a narrow viewport.');
+        if (process.env.TOOLKIT_SCREENSHOT_PATH) {
+            const screenshot = await rpc('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+            fs.writeFileSync(process.env.TOOLKIT_SCREENSHOT_PATH, Buffer.from(screenshot.data, 'base64'));
+        }
+        await rpc('Emulation.setDeviceMetricsOverride', { width: 1060, height: 1000, deviceScaleFactor: 1, mobile: false });
         await setText('[data-testid=metadata-title]', 'Changed title');
         await until(() => evaluate("document.querySelector('[data-testid=job-zip]').disabled && document.querySelector('[data-testid=generated-download]').disabled"), 'stale output download protection');
         await click('a[href^="/results/"]');
         await until(() => evaluate(`location.pathname === '/results/${jobId}' && !!document.querySelector('[data-testid=brand-home]') && document.body.innerText.includes('Job outputs')`), 'saved metadata job');
         assert(await evaluate("document.querySelector('.preview-panel img')?.getAttribute('src')?.includes('/static/uploads/jobs/')"));
+        assert(await evaluate("document.body.innerText.includes('Card') && document.body.innerText.includes('Film')"), 'Saved outputs show persisted styles.');
+        // Opening the saved-results link is a full navigation, so install this
+        // compatibility fixture in the new document before its next job fetch.
+        await evaluate(`{
+            const previousFetch = window.fetch;
+            window.fetch = async (input, init) => {
+                const response = await previousFetch(input, init);
+                const url = typeof input === 'string' ? input : input.url;
+                if (!url.startsWith('/api/jobs/')) return response;
+                const data = await response.json();
+                data.outputs?.forEach(output => { delete output.metadata_options; });
+                return new Response(JSON.stringify(data), { status: response.status, headers: { 'Content-Type': 'application/json' } });
+            };
+        }`);
         await click('[data-testid=brand-home]');
         await until(() => evaluate("location.pathname === '/' && !!document.querySelector('[data-testid=tool-card-metadata]')"), 'home from saved result');
         await evaluate('history.back()');
         await until(() => evaluate(`location.pathname === '/results/${jobId}' && document.body.innerText.includes('Job outputs') && !!document.querySelector('.preview-panel img')`), 'Back navigation to a saved result');
+
+        assert(await evaluate("document.body.innerText.includes('Original')"), 'Historical outputs without metadata_options display Original.');
 
         await rpc('Emulation.setDeviceMetricsOverride', { width: 390, height: 900, deviceScaleFactor: 1, mobile: true });
         await delay(250);
@@ -225,7 +345,7 @@ async function until(check, label) {
         await evaluate('history.back()');
         await until(() => evaluate(`location.pathname === '/results/${jobId}' && !!document.querySelector('.preview-panel img')`), 'Back navigation from a missing result');
         assert.equal(browserErrors.length, 0, JSON.stringify(browserErrors));
-        console.log('Passed redesigned navigation, empty workspace, dark mode, QR PNG/JPEG and color Apply/Reset, backend metadata preview, stale-download protection, saved-job Back navigation, and missing-job checks.');
+        console.log('Passed navigation, QR exports, per-image metadata styles/themes/visibility, pending-job snapshots, mixed-style batches, stale-download protection, saved and historical results, and narrow-screen checks.');
     } finally {
         if (socket && socket.readyState === WebSocket.OPEN) { rpc('Browser.close').catch(() => {}); await delay(400); socket.close(); }
         for (const child of children.reverse()) if (child.exitCode === null) child.kill();

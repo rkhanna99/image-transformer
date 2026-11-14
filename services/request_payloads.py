@@ -19,6 +19,10 @@ class MetadataImagePayload:
     aspectRatio: str = "Default"
     customAspectRatio: str | None = None
     clientImageId: str | None = None
+    overlayStyle: str = "original"
+    themeTone: str = "linen-light"
+    showGpsCoordinates: bool = True
+    showColorStrip: bool = True
 
     def as_form(self) -> dict[str, Any]:
         return asdict(self)
@@ -96,7 +100,30 @@ def _validate_coordinates(latitude: str | None, longitude: str | None) -> None:
         raise ValueError("Longitude must be between -180 and 180")
 
 
-def _metadata_image(data: Any) -> MetadataImagePayload:
+def _choice(value: Any, name: str, choices: tuple[str, ...]) -> str:
+    if not isinstance(value, str) or value not in choices:
+        raise ValueError(f"{name} must be one of: {', '.join(choices)}")
+    return value
+
+
+def _visibility(value: Any, name: str, legacy: bool) -> bool:
+    if type(value) is bool:
+        return value
+    if legacy and isinstance(value, str) and value in {"true", "false"}:
+        return value == "true"
+    raise ValueError(f"{name} must be a boolean")
+
+
+def _legacy_metadata_options(form, index: int | None = None) -> dict:
+    options = {}
+    for name in ("overlayStyle", "themeTone", "showGpsCoordinates", "showColorStrip"):
+        key = name if index is None else f"{name}[{index}]"
+        if key in form:
+            options[name] = form.get(key)
+    return options
+
+
+def _metadata_image(data: Any, *, legacy: bool = False) -> MetadataImagePayload:
     if not isinstance(data, dict):
         raise ValueError("Each metadata image must be a JSON object")
     payload = MetadataImagePayload(
@@ -107,6 +134,10 @@ def _metadata_image(data: Any) -> MetadataImagePayload:
         aspectRatio=validate_ratio(data.get("aspectRatio", "Default"), data.get("customAspectRatio")),
         customAspectRatio=_optional_text(data.get("customAspectRatio"), "customAspectRatio"),
         clientImageId=_client_id(data.get("clientImageId")),
+        overlayStyle=_choice(data.get("overlayStyle", "original"), "overlayStyle", ("original", "card", "overlay", "film")),
+        themeTone=_choice(data.get("themeTone", "linen-light"), "themeTone", ("linen-light", "slate-dark")),
+        showGpsCoordinates=_visibility(data.get("showGpsCoordinates", True), "showGpsCoordinates", legacy),
+        showColorStrip=_visibility(data.get("showColorStrip", True), "showColorStrip", legacy),
     )
     _validate_coordinates(payload.latitude, payload.longitude)
     if not payload.latitude and not payload.address:
@@ -128,7 +159,8 @@ def parse_single_metadata_payload(form) -> MetadataImagePayload:
         "photoName": form.get("photoName"),
         "aspectRatio": form.get("aspectRatio") or "Default",
         "customAspectRatio": form.get("customAspectRatio"),
-    })
+        **_legacy_metadata_options(form),
+    }, legacy=True)
 
 
 def parse_batch_metadata_payload(form, image_count: int) -> MetadataBatchPayload:
@@ -147,7 +179,8 @@ def parse_batch_metadata_payload(form, image_count: int) -> MetadataBatchPayload
                 "photoName": form.get(f"photoName[{index}]"),
                 "aspectRatio": form.get(f"aspectRatio[{index}]") or "Default",
                 "customAspectRatio": form.get(f"customAspectRatio[{index}]"),
-            })
+                **_legacy_metadata_options(form, index),
+            }, legacy=True)
             for index in range(image_count)
         ])
     if len(result.images) != image_count:

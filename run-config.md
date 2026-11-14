@@ -8,7 +8,7 @@ Use Python 3.11 for Flask and Node 22 with pnpm 10.34.3 for the React client.
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-DEV=0 python app.py
+DEV=0 TOOLKIT_RELOAD=1 python app.py
 ```
 
 In a second terminal:
@@ -21,7 +21,7 @@ pnpm dev
 
 Open `http://localhost:5173`. Vite proxies to `TOOLKIT_BACKEND_URL`, defaulting to `http://127.0.0.1:5000`. If Flask runs in the development Compose service, set `TOOLKIT_BACKEND_URL=http://127.0.0.1:55000`. Flask uses `DEV=0`; Vite provides frontend reloads without adding Flask's live-reload script to the SPA.
 
-For backend-only Docker development, `docker compose up --build` exposes Flask at `http://localhost:55000`. Run Vite on the host to work on the UI.
+For backend-only Docker development, `docker compose up --build` exposes Flask at `http://localhost:55000`. Run Vite on the host to work on the UI. The development service enables `TOOLKIT_RELOAD=1` for Python source reloads without the livereload script or debugger. Apply Compose configuration changes with `docker compose up -d`. If `TOOLKIT_RELOAD` is disabled, restart Flask after backend edits; Vite reloads frontend code only. Production does not enable Python reload.
 
 ## Production
 

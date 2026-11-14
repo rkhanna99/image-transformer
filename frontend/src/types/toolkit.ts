@@ -16,6 +16,15 @@ export interface ExtractedColor {
   name: string;
 }
 
+export type MetadataStyle = 'original' | 'card' | 'overlay' | 'film';
+
+export interface MetadataRenderOptions {
+  overlayStyle: MetadataStyle;
+  themeTone: 'linen-light' | 'slate-dark';
+  showGpsCoordinates: boolean;
+  showColorStrip: boolean;
+}
+
 export interface ImageMetadataFields {
   photoName: string;
   address: string;
@@ -29,7 +38,7 @@ export interface ImageMetadataFields {
   shutterSpeed: string;
   iso: string;
   captureDate: string;
-  overlayStyle: 'gallery-sheet' | 'glass-hud' | 'film-border';
+  overlayStyle: MetadataStyle;
   showColorStrip: boolean;
   showGpsCoordinates: boolean;
   themeTone: 'linen-light' | 'slate-dark';
@@ -82,7 +91,7 @@ export interface StudioImage {
 }
 
 /** Source files remain browser-owned until a user explicitly starts processing. */
-export interface MetadataDraft {
+export interface MetadataDraft extends MetadataRenderOptions {
   address: string;
   latitude: string;
   longitude: string;
@@ -109,6 +118,7 @@ export interface JobOutput {
   output_filename: string;
   preview_filename: string;
   client_image_id?: string;
+  metadata_options?: MetadataRenderOptions;
 }
 
 export interface PaletteSwatch {

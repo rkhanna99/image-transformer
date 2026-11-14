@@ -5,6 +5,7 @@ import tempfile
 import time
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -58,6 +59,7 @@ class ProcessingApiTests(unittest.TestCase):
         self.assertEqual(job["status"], "succeeded", job["error"])
         self.assertEqual([output["client_image_id"] for output in job["outputs"]], ["source-red", "source-blue"])
         self.assertEqual(len({output["output_filename"] for output in job["outputs"]}), 2)
+        self.assertTrue(all(output["metadata_options"] == {"overlayStyle": "original", "themeTone": "linen-light", "showGpsCoordinates": True, "showColorStrip": True} for output in job["outputs"]))
 
         output_pixels = []
         for output, preview_url in zip(job["outputs"], job["preview_urls"]):
@@ -100,6 +102,63 @@ class ProcessingApiTests(unittest.TestCase):
         self.assertEqual(job["status"], "succeeded", job["error"])
         self.assertEqual([output["client_image_id"] for output in job["outputs"]], ["left", "right"])
         self.assertNotEqual(job["outputs"][0]["output_path"], job["outputs"][1]["output_path"])
+        self.assertTrue(all("metadata_options" not in output for output in job["outputs"]))
+
+    def test_metadata_mixed_styles_persist_settings_and_natural_dimensions(self):
+        entries = []
+        for index, style in enumerate(("original", "card", "overlay", "film")):
+            entries.append({
+                "clientImageId": f"source-{index}", "latitude": "0", "longitude": "0",
+                "overlayStyle": style, "themeTone": "slate-dark" if index % 2 else "linen-light",
+                "showGpsCoordinates": index % 2 == 0, "showColorStrip": False,
+            })
+        response = self.client.post("/process-images", data={
+            "images": [(io.BytesIO(png_bytes((200, 100, 40))), "same.png") for _ in entries],
+            "payload": json.dumps({"images": entries}),
+        }, content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 202, response.get_json())
+        job = self.await_job(response.get_json()["id"])
+        self.assertEqual(job["status"], "succeeded", job["error"])
+        self.assertEqual([output["client_image_id"] for output in job["outputs"]], [entry["clientImageId"] for entry in entries])
+        for output, entry in zip(job["outputs"], entries):
+            self.assertEqual(output["metadata_options"], {key: entry[key] for key in ("overlayStyle", "themeTone", "showGpsCoordinates", "showColorStrip")})
+            with Image.open(output["output_path"]) as image:
+                expected = {"card": (104, 83), "overlay": (96, 64), "film": (106, 78)}.get(entry["overlayStyle"])
+                if expected:
+                    self.assertEqual(image.size, expected)
+        reloaded = self.client.get(job["status_url"]).get_json()
+        self.assertEqual(reloaded["outputs"], job["outputs"])
+        archive = self.client.get(f"/download-all/{job['id']}")
+        try:
+            with zipfile.ZipFile(io.BytesIO(archive.data)) as bundle:
+                self.assertEqual(len(bundle.namelist()), 4)
+        finally:
+            archive.close()
+
+    def test_metadata_single_legacy_design_and_explicit_print_ratio(self):
+        response = self.client.post("/process-image", data={
+            "image": (io.BytesIO(png_bytes((200, 100, 40))), "sample.png"),
+            "latitude": "0", "longitude": "0", "overlayStyle": "film",
+            "themeTone": "slate-dark", "showGpsCoordinates": "false", "showColorStrip": "false", "aspectRatio": "1:1",
+        }, content_type="multipart/form-data")
+        self.assertEqual(response.status_code, 202, response.get_json())
+        job = self.await_job(response.get_json()["id"])
+        self.assertEqual(job["status"], "succeeded", job["error"])
+        output = job["outputs"][0]
+        self.assertFalse(output["metadata_options"]["showGpsCoordinates"])
+        with Image.open(output["output_path"]) as image:
+            self.assertEqual(image.size, (106, 106))
+
+    def test_invalid_metadata_design_rejected_before_job_creation(self):
+        for fields in ({"overlayStyle": []}, {"themeTone": "dark"}, {"showColorStrip": "false"}, {"showGpsCoordinates": None}):
+            with self.subTest(fields=fields), patch('app.job_store.create_job') as create, patch('app.job_queue.submit_metadata_job') as enqueue:
+                valid = {"latitude": "0", "longitude": "0"}
+                response = self.client.post("/process-image", data={"image": (io.BytesIO(png_bytes((1, 2, 3))), "sample.png"), "payload": json.dumps(valid | fields)}, content_type="multipart/form-data")
+                self.assertEqual(response.status_code, 400)
+                response = self.client.post("/process-images", data={"images": [(io.BytesIO(png_bytes((1, 2, 3))), "a.png"), (io.BytesIO(png_bytes((1, 2, 3))), "b.png")], "payload": json.dumps({"images": [valid, valid | fields]})}, content_type="multipart/form-data")
+                self.assertEqual(response.status_code, 400)
+                create.assert_not_called()
+                enqueue.assert_not_called()
 
     def test_palette_api_returns_swatches_from_the_saved_palette_artifact(self):
         response = self.client.post("/api/palette", data={

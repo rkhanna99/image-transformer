@@ -1,51 +1,11 @@
 from werkzeug.utils import secure_filename
 from processing_scripts.image_transformer import process_image
+from processing_scripts.metadata_renderers import MetadataRenderOptions
 from processing_scripts.helpers import *
-import math
 import os
 import uuid
-import numpy as np
-from PIL import Image, ImageOps
-from Pylette import Color, Palette
-from sklearn.cluster import KMeans
-
-
-def extract_dominant_palette(image, num_colors=7):
-    """Group similar RGB shades and order them by sampled pixel frequency."""
-    image = ImageOps.exif_transpose(image).convert('RGBA')
-    image.thumbnail((256, 256))
-    pixels = np.asarray(image)
-    # Hidden RGB values in transparent backgrounds must not count as colors.
-    visible_pixels = pixels[pixels[:, :, 3] > 0, :3]
-
-    if len(visible_pixels) == 0:
-        raise ValueError('The image has no visible pixels.')
-
-    palette_size = min(num_colors, len(np.unique(visible_pixels, axis=0)))
-    # Pylette uses a single K-means initialization, which can merge a distinct
-    # accent color into another group while splitting similar shades instead.
-    # Keep the best fit across multiple deterministic initializations.
-    model = KMeans(n_clusters=palette_size, n_init=10, random_state=2024)
-    labels = model.fit_predict(visible_pixels)
-    counts = np.bincount(labels, minlength=palette_size)
-    centers = np.rint(model.cluster_centers_).astype(int)
-    colors = [
-        Color(tuple(int(channel) for channel in rgb), float(count / len(visible_pixels)))
-        for rgb, count in zip(centers, counts)
-        if count > 0
-    ]
-    return Palette(
-        sorted(colors, key=lambda color: color.freq, reverse=True)
-    )
-
-
-def palette_color_samples(palette):
-    """Return RGB/frequency pairs from a Pylette palette."""
-    samples = []
-    for color in palette.colors:
-        rgb = tuple(int(channel) for channel in color.rgb)
-        samples.append((rgb, float(getattr(color, 'freq', 0.0))))
-    return samples
+from PIL import Image
+from processing_scripts.color_palette import extract_dominant_palette, palette_color_samples
 
 
 def process_color_palette(file, num_colors, upload_folder):
@@ -142,17 +102,7 @@ def process_metadata_overlay_path(image_path, original_filename, form, upload_fo
         except (AttributeError, ValueError) as exc:
             raise ValueError("Invalid aspect ratio") from exc
     else:
-        # Open the image to determine its aspect ratio
-        with Image.open(image_path) as img:
-            # Ensure the image is in its correct orientation after opening it
-            img = ImageOps.exif_transpose(img)
-            width, height = img.size
-
-            # Need to reduce width and height to their simplest form
-            gcd = math.gcd(width, height)
-            width //= gcd
-            height //= gcd
-            print_aspect_ratio = (width, height)
+        print_aspect_ratio = None
 
     # Now that we have all of the fields in the desired format we can start working on the metadata overlay
     try:
@@ -162,7 +112,10 @@ def process_metadata_overlay_path(image_path, original_filename, form, upload_fo
             longitude=longitude,
             photo_title=photo_title,
             print_aspect_ratio=print_aspect_ratio,
-            local_save=False # Not saving it locally within the function, will only save in the static/uploads folder
+            local_save=False,
+            render_options=MetadataRenderOptions.from_mapping(form),
+            location_label=address,
+            original_filename=original_filename,
         )
 
         # Save the processed image to return

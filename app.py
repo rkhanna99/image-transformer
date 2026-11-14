@@ -30,7 +30,12 @@ STATIC_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 JOB_STORE_ROOT.mkdir(parents=True, exist_ok=True)
 
 job_store = JobStore(str(JOB_STORE_ROOT))
-job_store.mark_incomplete_jobs_failed()
+# The Werkzeug reloader's parent never serves jobs. Run restart recovery in
+# its serving child only, or normally when imported by tests/a WSGI server.
+DEV_MODE = os.getenv("DEV", os.getenv("FLASK_ENV", "")).lower() in ("1", "true", "dev", "development")
+PYTHON_RELOAD = not DEV_MODE and os.getenv("TOOLKIT_RELOAD", "0").lower() in ("1", "true")
+if not (__name__ == "__main__" and PYTHON_RELOAD) or os.getenv("WERKZEUG_RUN_MAIN") == "true":
+    job_store.mark_incomplete_jobs_failed()
 job_queue = JobQueue(job_store)
 
 
@@ -407,7 +412,6 @@ if __name__ == "__main__":
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-    DEV_MODE = os.getenv("DEV", os.getenv("FLASK_ENV", "")).lower() in ("1", "true", "dev", "development")
     HOST = os.getenv("HOST", "0.0.0.0")
     PORT = int(os.getenv("PORT", 5000))
 
@@ -424,5 +428,5 @@ if __name__ == "__main__":
     else:
         # In production we expect a WSGI server (gunicorn/uWSGI) to run the app.
         # Provide a minimal fallback if someone runs `python app.py` in prod.
-        logger.info("Starting Flask server with live reload disabled; set DEV=1 to enable live reload")
-        app.run(host=HOST, port=PORT)
+        logger.info("Starting Flask server with Python reload %s", "enabled" if PYTHON_RELOAD else "disabled")
+        app.run(host=HOST, port=PORT, use_reloader=PYTHON_RELOAD, reloader_type="stat")

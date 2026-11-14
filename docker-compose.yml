@@ -11,6 +11,7 @@ services:
     environment:
       DEV: "0"
       FLASK_DEBUG: "0"
+      TOOLKIT_RELOAD: "1"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=3)"]
       interval: 30s

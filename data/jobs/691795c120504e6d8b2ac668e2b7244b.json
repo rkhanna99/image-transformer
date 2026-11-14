@@ -1,0 +1,20 @@
+{
+  "id": "691795c120504e6d8b2ac668e2b7244b",
+  "type": "metadata",
+  "source": "metadata",
+  "status": "succeeded",
+  "total_items": 1,
+  "created_at": "2026-11-13T22:08:10.655558+00:00",
+  "updated_at": "2026-11-13T22:08:13.439526+00:00",
+  "outputs": [
+    {
+      "input_filename": "DSCF2939-2.jpg",
+      "output_filename": "processed_input_1_ef010213dceaa5bd_DSCF2939-2.jpg",
+      "output_path": "/app/static/uploads/jobs/691795c120504e6d8b2ac668e2b7244b/processed_input_1_ef010213dceaa5bd_DSCF2939-2.jpg",
+      "preview_filename": "preview_processed_input_1_ef010213dceaa5bd_DSCF2939-2.jpg",
+      "preview_path": "/app/static/uploads/jobs/691795c120504e6d8b2ac668e2b7244b/preview_processed_input_1_ef010213dceaa5bd_DSCF2939-2.jpg",
+      "client_image_id": "6843e340-3030-45bd-8376-feb91eefa109"
+    }
+  ],
+  "error": null
+}

@@ -11,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from services.image_upload_service import process_metadata_overlay_path
+from processing_scripts.metadata_renderers import MetadataRenderOptions
 from processing_scripts.helpers import create_simple_border
 from PIL import Image, ImageOps
 
@@ -99,6 +100,7 @@ def process_metadata_images(job_id: str, upload_folder: str, items: list[dict[st
                 "preview_filename": preview_filename,
                 "preview_path": preview_path,
                 "client_image_id": item.get("client_image_id"),
+                "metadata_options": MetadataRenderOptions.from_mapping(item["form"]).as_payload(),
             }
         )
 

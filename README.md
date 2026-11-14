@@ -11,7 +11,7 @@ Use Python 3.11 and Node 22. Install the Python requirements and start Flask:
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-DEV=0 python app.py
+DEV=0 TOOLKIT_RELOAD=1 python app.py
 ```
 
 In another terminal, use pnpm 10.34.3:
@@ -22,13 +22,13 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open `http://localhost:5173`. Vite proxies backend requests to `TOOLKIT_BACKEND_URL`, defaulting to `http://127.0.0.1:5000`. When using the development Compose service instead, set `TOOLKIT_BACKEND_URL=http://127.0.0.1:55000`. Frontend edits use Vite reload; Flask runs with `DEV=0` to avoid injecting its live-reload script into the React page.
+Open `http://localhost:5173`. Vite proxies backend requests to `TOOLKIT_BACKEND_URL`, defaulting to `http://127.0.0.1:5000`. When using the development Compose service instead, set `TOOLKIT_BACKEND_URL=http://127.0.0.1:55000`. Frontend edits use Vite reload; `TOOLKIT_RELOAD=1` reloads Python source changes. Flask runs with `DEV=0` to avoid injecting its live-reload script into the React page.
 
 Build the frontend for Flask with `cd frontend && pnpm build`; Vite writes the production bundle to `static/ui/`. Flask serves it at `/`, `/metadata`, `/border`, `/palette`, `/qr-code`, and `/results/<job_id>`. If the bundle is missing, those routes return HTTP 503.
 
 ## Docker
 
-For development, `docker compose up --build` starts only Flask at `http://localhost:55000`; run Vite on the host as above.
+For development, `docker compose up --build` starts only Flask at `http://localhost:55000`; run Vite on the host as above. This service enables `TOOLKIT_RELOAD=1`, which restarts Python when backend source files change without injecting scripts into the React page. After changing Compose settings, run `docker compose up -d` to apply them. Without `TOOLKIT_RELOAD`, backend edits require restarting Flask; frontend hot reload alone does not reload the Python renderer.
 
 For a standalone production deployment, use the independent production Compose file:
 
@@ -43,6 +43,12 @@ It builds the React assets in a Node 22 stage and serves them from the Python ru
 Uploads use multipart requests. The React client puts structured settings in a JSON `payload` form field and leaves multipart boundary generation to the browser. Metadata and border operations return HTTP 202 job records; clients poll their `status_url` while queued/running. Palette generation is synchronous at `POST /api/palette` and returns a completed job with swatch hex values and cluster frequencies. QR generation is synchronous at `POST /api/qr-code` and returns the generated image data URL and selected colors. Existing download and job-status routes remain available.
 
 Metadata and border settings accept positive `W:H` ratios, as well as `Default`. Metadata requires an address or both latitude and longitude; explicit coordinates take precedence. Border size is an integer from 0 to 50. Palette extraction supports 1–32 colors, ignores fully transparent pixels, samples a thumbnail up to 256 pixels per side, and uses ten deterministic K-means initializations ordered by cluster frequency. QR reference images remain limited to 10 MB and 25 megapixels.
+
+Metadata offers four per-image styles: **Original**, **Card**, **Overlay**, and **Film**. All support a separate export light/dark appearance and switches for GPS coordinates and the color strip. Camera details come from real EXIF; absent values are omitted. Hiding GPS changes coordinate text only, and location is still required for processing. Appearance controls do not follow the application's dark mode.
+
+Exports preserve the entire oriented photo at its native resolution. Card and Film add frames; Overlay places a translucent panel over the photo. For those three styles, `Default` keeps the natural composition dimensions. Explicit print ratios add centered padding around the completed design without cropping or resizing. Original retains its existing source-ratio print padding when `Default` is selected and remains the initial style. Editing any design setting requires Generate before downloading the updated result.
+
+Metadata requests accept `overlayStyle` (`original`, `card`, `overlay`, `film`), `themeTone` (`linen-light`, `slate-dark`), `showGpsCoordinates`, and `showColorStrip`. Defaults are `original`, `linen-light`, `true`, and `true`. JSON visibility values must be booleans; legacy multipart fields accept `true`/`false` strings, including indexed batch fields. Each metadata output records these four settings in `metadata_options`; older saved outputs display as Original. The new renderers bundle Plus Jakarta Sans and JetBrains Mono with their licenses, so exporting needs no font downloads.
 
 The React workspace starts empty, retains uploaded browser files until removed, and submits processing only from explicit Generate actions. Completed jobs remain available at their result URLs after refresh; browser upload drafts are session state and are not restored from a saved job.
 

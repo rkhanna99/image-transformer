@@ -232,7 +232,7 @@ def adjust_line_font(left_text: str, right_text: str, font_path: str, initial_fo
 
 
 # Helper function to create an image with metadata details and dimensions of orginal image (Optional Image name too)
-def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height: int, img_name: str=None) -> Image:
+def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height: int, img_name: str=None, *, background=(255, 255, 255), foreground=(0, 0, 0), show_gps=True) -> Image:
     """
     Creates an image overlay with metadata details, formatted according to the dimensions of the 
     original image. Optionally includes the image name and GPS metadata if provided.
@@ -253,11 +253,11 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
 
     # Set our font and image sizes depending on whether we have a landscape or portrait picture this will be the initial size
     if img_width > img_height:
-        image = Image.new('RGB', (width, max(1, height // 11)), color=(255,255,255))
+        image = Image.new('RGB', (width, max(1, height // 11)), color=background)
         larger_font_size = calculate_font_size(image, 0.30)
         smaller_font_size = calculate_font_size(image, 0.25)
     else:
-        image = Image.new('RGB', (width, max(1, height // 13)), color=(255,255,255))
+        image = Image.new('RGB', (width, max(1, height // 13)), color=background)
         larger_font_size = calculate_font_size(image, 0.236)
         smaller_font_size = calculate_font_size(image, 0.197)
 
@@ -279,7 +279,7 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
     gps_available = all(metadata.get(key) is not None for key in (
         "GPSLatitude", "GPSLatitudeRef", "GPSLongitude", "GPSLongitudeRef",
     ))
-    location = format_gps_decimal(metadata) if gps_available else ""
+    location = format_gps_decimal(metadata) if gps_available and show_gps else ""
     first_line_left = str(img_name).strip() if img_name else camera
     if img_name and location:
         first_line_left = f"{first_line_left} ({location})"
@@ -321,26 +321,26 @@ def generate_metadata_image(metadata: dict[str, Any], img_width: int, img_height
     second_line_start = min(image.height - 1, get_proportions(img_width, img_height, 250))
 
     # First line left side (Bold)
-    draw.text((0, first_line_start), first_line_left, font=font_bold, fill=(0, 0, 0))
-    #draw.text((51, 50), first_line_left, font=font, fill=(0, 0, 0))
+    draw.text((0, first_line_start), first_line_left, font=font_bold, fill=foreground)
+    #draw.text((51, 50), first_line_left, font=font, fill=foreground)
 
     # First line right side (Bold)
     if first_line_right:
         bbox = draw.textbbox((0, 0), first_line_right, font=font_bold)
         text_width = bbox[2] - bbox[0]
-        draw.text((image.width - text_width, first_line_start), first_line_right, font=font_bold, fill=(0, 0, 0))
-    #draw.text((image.width - text_width - 49, 50), first_line_right, font=font, fill=(0, 0, 0))
+        draw.text((image.width - text_width, first_line_start), first_line_right, font=font_bold, fill=foreground)
+    #draw.text((image.width - text_width - 49, 50), first_line_right, font=font, fill=foreground)
 
 
     # Second line left side
     if second_line_left:
-        draw.text((0, second_line_start), second_line_left, font=font_regular, fill=(0, 0, 0))
+        draw.text((0, second_line_start), second_line_left, font=font_regular, fill=foreground)
 
     # Second line right side
     if second_line_right:
         bbox = draw.textbbox((0, 0), second_line_right, font=font_regular)
         text_width = bbox[2] - bbox[0]
-        draw.text((image.width - text_width, second_line_start), second_line_right, font=font_regular, fill=(0, 0, 0))
+        draw.text((image.width - text_width, second_line_start), second_line_right, font=font_regular, fill=foreground)
 
     return image
 
